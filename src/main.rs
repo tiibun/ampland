@@ -52,14 +52,24 @@ fn run() -> Result<(), AppError> {
         Command::Use {
             tool,
             version,
+            global,
             path,
         } => {
-            let cwd = resolve_path(cli.path, path)?;
-            let pattern = normalize_scope_pattern(&cwd);
             let target = Target::current()?;
             let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
             let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
-            upsert_scope_tool(&mut config, &pattern, &tool, &version);
+            let mut scope_label = None;
+            if global {
+                config
+                    .global
+                    .tools
+                    .insert(tool.clone(), version.clone());
+            } else {
+                let cwd = resolve_path(cli.path, path)?;
+                let pattern = normalize_scope_pattern(&cwd);
+                upsert_scope_tool(&mut config, &pattern, &tool, &version);
+                scope_label = Some(pattern);
+            }
             if !cache.is_installed(&tool, &version) {
                 let package = manifest
                     .resolve(&tool, &version, &target)
@@ -76,7 +86,11 @@ fn run() -> Result<(), AppError> {
             }
             config.save(&config_path)?;
             if !cli.quiet {
-                println!("set {tool}@{version} for {pattern}");
+                if global {
+                    println!("set {tool}@{version} for global");
+                } else if let Some(pattern) = scope_label {
+                    println!("set {tool}@{version} for {pattern}");
+                }
             }
         }
         Command::Install { tool, version } => {

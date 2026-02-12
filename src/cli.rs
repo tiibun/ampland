@@ -28,6 +28,8 @@ pub enum Command {
     Use {
         tool: String,
         version: String,
+        #[arg(short, long)]
+        global: bool,
         #[arg(long)]
         path: Option<PathBuf>,
     },
