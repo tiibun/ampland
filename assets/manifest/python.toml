@@ -1,0 +1,52 @@
+version = 1
+generated_at = "2026-02-12T00:00:00Z"
+
+[[tool]]
+name = "python"
+vendor = "cpython"
+default_version = "3.14.3"
+
+	[[tool.version]]
+	ver = "3.14.3"
+	platform = "macos"
+	arch = "arm64"
+	url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260211/cpython-3.14.3+20260211-aarch64-apple-darwin-install_only.tar.gz"
+	sha256 = "df38f57df6b1030375d854e01bf7d4080971a2946b029fe5e8e86ff70efa2216"
+	format = "tar.gz"
+	bin_paths = ["python/bin/python", "python/bin/python3"]
+
+	[[tool.version]]
+	ver = "3.14.3"
+	platform = "macos"
+	arch = "x64"
+	url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260211/cpython-3.14.3+20260211-x86_64-apple-darwin-install_only.tar.gz"
+	sha256 = "f858d7c53b479bafd84812da79db061a7401fedd448deb65e81549728e4568f3"
+	format = "tar.gz"
+	bin_paths = ["python/bin/python", "python/bin/python3"]
+
+	[[tool.version]]
+	ver = "3.14.3"
+	platform = "linux"
+	arch = "arm64"
+	url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260211/cpython-3.14.3+20260211-aarch64-unknown-linux-gnu-install_only.tar.gz"
+	sha256 = "2021bb77a260a53777ba2038759140cfc3ae8abfffec4e6ea769607ec66654eb"
+	format = "tar.gz"
+	bin_paths = ["python/bin/python", "python/bin/python3"]
+
+	[[tool.version]]
+	ver = "3.14.3"
+	platform = "linux"
+	arch = "x64"
+	url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260211/cpython-3.14.3+20260211-x86_64-unknown-linux-gnu-install_only.tar.gz"
+	sha256 = "a3917eee21b61c9d8bfab22a773d1fe6945683dd40b5d5b263527af2550e3bbf"
+	format = "tar.gz"
+	bin_paths = ["python/bin/python", "python/bin/python3"]
+
+	[[tool.version]]
+	ver = "3.14.3"
+	platform = "windows"
+	arch = "x64"
+	url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260211/cpython-3.14.3+20260211-x86_64-pc-windows-msvc-install_only.tar.gz"
+	sha256 = "fcaae26be290da3c51fa14d0e89fe004b7858ed285038938b18e5682b7f7c592"
+	format = "tar.gz"
+	bin_paths = ["python/python.exe"]

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,7 +13,10 @@ use crate::error::AppError;
 
 const DEFAULT_PUBLIC_KEY_HEX: &str = "";
 const DEFAULT_TTL_HOURS: u64 = 24;
-const EMBEDDED_MANIFEST: &str = include_str!("../assets/manifest/installers.toml");
+const EMBEDDED_TOOL_MANIFESTS: &[&str] = &[
+    include_str!("../assets/manifest/node.toml"),
+    include_str!("../assets/manifest/python.toml"),
+];
 
 #[derive(Debug, Clone)]
 pub struct Target {
@@ -161,7 +165,7 @@ impl ManifestStore {
     }
 
     pub fn load(&self) -> Result<Manifest, AppError> {
-        let embedded = Manifest::parse(EMBEDDED_MANIFEST)?;
+        let embedded = embedded_manifest()?;
         let ttl = Duration::from_secs(self.ttl_hours() * 3600);
         let public_key = self.resolve_public_key()?;
         let cached = self.read_cached(public_key.as_deref())?;
@@ -304,6 +308,50 @@ impl ManifestStore {
         }
         Ok(Some(decoded))
     }
+}
+
+fn embedded_manifest() -> Result<Manifest, AppError> {
+    if EMBEDDED_TOOL_MANIFESTS.is_empty() {
+        return Err(AppError::Other {
+            message: "embedded manifest list is empty".to_string(),
+        });
+    }
+
+    let mut manifests = Vec::with_capacity(EMBEDDED_TOOL_MANIFESTS.len());
+    for manifest_text in EMBEDDED_TOOL_MANIFESTS {
+        manifests.push(Manifest::parse(manifest_text)?);
+    }
+
+    let mut iter = manifests.into_iter();
+    let mut merged = iter.next().ok_or_else(|| AppError::Other {
+        message: "embedded manifest list is empty".to_string(),
+    })?;
+
+    let mut seen = HashSet::new();
+    for tool in &merged.tools {
+        seen.insert(tool.name.clone());
+    }
+
+    for manifest in iter {
+        if manifest.version != merged.version {
+            return Err(AppError::Other {
+                message: "embedded manifest version mismatch".to_string(),
+            });
+        }
+        if manifest.generated_at > merged.generated_at {
+            merged.generated_at = manifest.generated_at.clone();
+        }
+        for tool in manifest.tools {
+            if !seen.insert(tool.name.clone()) {
+                return Err(AppError::Other {
+                    message: format!("duplicate tool in embedded manifests: {}", tool.name),
+                });
+            }
+            merged.tools.push(tool);
+        }
+    }
+
+    Ok(merged)
 }
 
 #[derive(Debug, Clone)]
