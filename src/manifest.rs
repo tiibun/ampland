@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::config::ManifestConfig;
 use crate::error::AppError;
 
+const DEFAULT_MANIFEST_URL: &str =
+    "https://github.com/tiibun/ampland/releases/latest/download/installers.toml";
 const DEFAULT_PUBLIC_KEY_HEX: &str = "";
 const DEFAULT_TTL_HOURS: u64 = 24;
 const EMBEDDED_TOOL_MANIFESTS: &[&str] = &[
@@ -248,9 +250,12 @@ impl ManifestStore {
     }
 
     pub fn refresh(&self) -> Result<Manifest, AppError> {
-        let url = self.config.url.as_ref().ok_or_else(|| AppError::Config {
-            message: "manifest.url is required to update".to_string(),
-        })?;
+        let url = self
+            .config
+            .url
+            .as_ref()
+            .map(String::as_str)
+            .unwrap_or(DEFAULT_MANIFEST_URL);
         let public_key = self.resolve_public_key()?.ok_or_else(|| AppError::Config {
             message: "manifest.public_key is required to update".to_string(),
         })?;
@@ -273,10 +278,11 @@ impl ManifestStore {
     }
 
     fn try_update(&self, public_key: Option<&[u8]>) -> Result<Option<Manifest>, AppError> {
-        let url = match &self.config.url {
-            Some(url) => url.clone(),
-            None => return Ok(None),
-        };
+        let url = self
+            .config
+            .url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MANIFEST_URL.to_string());
 
         let public_key = match public_key {
             Some(key) => key,

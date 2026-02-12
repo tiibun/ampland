@@ -152,6 +152,30 @@ Manifest fields:
 - `manifest.public_key`: hex-encoded Ed25519 public key.
 - `manifest.ttl_hours`: cache TTL in hours (default 24).
 
+If `manifest.url` is not set, ampland uses the default release URL:
+`https://github.com/tiibun/ampland/releases/latest/download/installers.toml`.
+
+## Manifest signing
+
+Generate a keypair and public key hex:
+
+```
+openssl genpkey -algorithm ed25519 -out manifest_ed25519.pem
+openssl pkey -in manifest_ed25519.pem -pubout -outform DER | tail -c 32 | xxd -p -c 64 > manifest_public_key.hex
+```
+
+Use the public key hex in one of these places:
+- `manifest.public_key` in `config.toml`.
+- `DEFAULT_PUBLIC_KEY_HEX` in the source.
+
+For GitHub Actions, store the PEM contents in `MANIFEST_SIGNING_KEY`.
+
+Local publish script:
+
+```
+MANIFEST_SIGNING_KEY="$(cat manifest_ed25519.pem)" ./scripts/publish-manifest.sh
+```
+
 ## Export and import
 
 Export the resolved tool versions for the current directory:
