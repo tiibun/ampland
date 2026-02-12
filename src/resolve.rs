@@ -86,11 +86,7 @@ fn select_scope(config: &Config, cwd: &Path) -> Result<Option<ScopeMatch>, AppEr
     let mut best_scope: Option<Scope> = None;
 
     for scope in config.normalized_scopes()? {
-        let glob = Glob::new(&scope.pattern).map_err(|err| AppError::Config {
-            message: format!("invalid scope glob '{}': {err}", scope.pattern),
-        })?;
-        let matcher = glob.compile_matcher();
-        if matcher.is_match(cwd_str.as_ref()) {
+        if scope_matches(&scope.pattern, cwd_str.as_ref())? {
             let score = scope.pattern.len();
             match &best {
                 Some((best_score, _)) if *best_score >= score => {}
@@ -106,4 +102,20 @@ fn select_scope(config: &Config, cwd: &Path) -> Result<Option<ScopeMatch>, AppEr
         pattern: scope.pattern,
         tools: scope.tools,
     }))
+}
+
+fn scope_matches(pattern: &str, cwd: &str) -> Result<bool, AppError> {
+    let glob = Glob::new(pattern).map_err(|err| AppError::Config {
+        message: format!("invalid scope glob '{pattern}': {err}"),
+    })?;
+    let matcher = glob.compile_matcher();
+    if matcher.is_match(cwd) {
+        return Ok(true);
+    }
+
+    let prefix = pattern.strip_suffix("/**");
+    Ok(match prefix {
+        Some(prefix) => cwd == prefix,
+        None => false,
+    })
 }
