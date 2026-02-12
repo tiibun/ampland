@@ -13,9 +13,15 @@ use crate::cache::Cache;
 use crate::error::AppError;
 use crate::manifest::{PackageFormat, ResolvedPackage};
 
-pub fn install(cache: &Cache, tool: &str, version: &str, package: &ResolvedPackage) -> Result<PathBuf, AppError> {
+pub fn install(
+    cache: &Cache,
+    tool: &str,
+    version: &str,
+    package: &ResolvedPackage,
+) -> Result<PathBuf, AppError> {
     cache.with_lock(|| {
-        let install_path = cache.tool_bin_path(tool, version);
+        let bin_dir = cache.tool_bin_dir(tool, version);
+        let install_path = primary_bin_path(cache, tool, version, &package.bin_paths);
         if install_path.exists() {
             return Ok(install_path);
         }
@@ -31,70 +37,131 @@ pub fn install(cache: &Cache, tool: &str, version: &str, package: &ResolvedPacka
             }
         }
 
-        if let Some(parent) = install_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
+        fs::create_dir_all(&bin_dir)?;
 
         match package.format {
             PackageFormat::File => {
-                fs::copy(&archive_path, &install_path)?;
+                if package.bin_paths.is_empty() {
+                    fs::copy(&archive_path, &install_path)?;
+                    make_executable(&install_path)?;
+                } else if package.bin_paths.len() == 1 {
+                    let target = bin_dir.join(bin_file_name(&package.bin_paths[0])?);
+                    fs::copy(&archive_path, &target)?;
+                    make_executable(&target)?;
+                } else {
+                    return Err(AppError::Cache {
+                        message: "file package cannot define multiple bin_paths".to_string(),
+                    });
+                }
             }
             PackageFormat::TarGz => {
                 let unpack_dir = tmp_dir.path().join("unpacked");
                 fs::create_dir_all(&unpack_dir)?;
                 unpack_tar_gz(&archive_path, &unpack_dir)?;
-                let source = match &package.bin_path {
-                    Some(path) => unpack_dir.join(path),
-                    None => {
-                        return Err(AppError::Cache {
-                            message: "tar.gz package missing bin_path".to_string(),
-                        })
-                    }
-                };
-                if !source.exists() {
-                    return Err(AppError::Cache {
-                        message: format!("bin_path not found in archive: {}", source.display()),
-                    });
-                }
-                fs::copy(&source, &install_path)?;
+                install_from_unpack(&unpack_dir, &bin_dir, &package.bin_paths, "tar.gz")?;
             }
             PackageFormat::TarXz => {
                 let unpack_dir = tmp_dir.path().join("unpacked");
                 fs::create_dir_all(&unpack_dir)?;
                 unpack_tar_xz(&archive_path, &unpack_dir)?;
-                let source = match &package.bin_path {
-                    Some(path) => unpack_dir.join(path),
-                    None => {
-                        return Err(AppError::Cache {
-                            message: "tar.xz package missing bin_path".to_string(),
-                        })
-                    }
-                };
-                if !source.exists() {
-                    return Err(AppError::Cache {
-                        message: format!("bin_path not found in archive: {}", source.display()),
-                    });
-                }
-                fs::copy(&source, &install_path)?;
+                install_from_unpack(&unpack_dir, &bin_dir, &package.bin_paths, "tar.xz")?;
             }
             PackageFormat::Zip => {
-                let bin_dir = cache.tool_version_dir(tool, version).join("bin");
-                fs::create_dir_all(&bin_dir)?;
                 unpack_zip(&archive_path, &bin_dir)?;
-                let expected = match &package.bin_path {
-                    Some(path) => bin_dir.join(path),
-                    None => install_path.clone(),
-                };
-                if !expected.exists() {
-                    return Err(AppError::Cache {
-                        message: format!("bin_path not found in archive: {}", expected.display()),
-                    });
+                if package.bin_paths.is_empty() {
+                    if !install_path.exists() {
+                        return Err(AppError::Cache {
+                            message: format!(
+                                "bin_path not found in archive: {}",
+                                install_path.display()
+                            ),
+                        });
+                    }
+                    make_executable(&install_path)?;
+                } else {
+                    for bin_path in package.bin_paths.iter().cloned() {
+                        let expected = bin_dir.join(&bin_path);
+                        if !expected.exists() {
+                            return Err(AppError::Cache {
+                                message: format!(
+                                    "bin_path not found in archive: {}",
+                                    expected.display()
+                                ),
+                            });
+                        }
+                        make_executable(&expected)?;
+                    }
                 }
             }
         }
-
-        make_executable(&install_path)?;
         Ok(install_path)
+    })
+}
+
+fn install_from_unpack(
+    unpack_dir: &Path,
+    bin_dir: &Path,
+    bin_paths: &[String],
+    format: &str,
+) -> Result<(), AppError> {
+    if bin_paths.is_empty() {
+        return Err(AppError::Cache {
+            message: format!("{format} package missing bin_paths"),
+        });
+    }
+
+    for bin_path in bin_paths.iter().cloned() {
+        let source = unpack_dir.join(&bin_path);
+        if !source.exists() {
+            return Err(AppError::Cache {
+                message: format!("bin_path not found in archive: {}", source.display()),
+            });
+        }
+        let target = bin_dir.join(bin_file_name(&bin_path)?);
+        fs::copy(&source, &target)?;
+        make_executable(&target)?;
+    }
+
+    Ok(())
+}
+
+fn bin_file_name(path: &str) -> Result<String, AppError> {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .ok_or_else(|| AppError::Cache {
+            message: format!("invalid bin_path: {path}"),
+        })
+}
+
+fn primary_bin_path(
+    cache: &Cache,
+    tool: &str,
+    version: &str,
+    bin_paths: &[String],
+) -> PathBuf {
+    if let Some(bin_path) = find_bin_path(tool, bin_paths) {
+        if let Ok(file_name) = bin_file_name(bin_path) {
+            return cache.tool_bin_dir(tool, version).join(file_name);
+        }
+    }
+    if let Some(first) = bin_paths.first() {
+        if let Ok(file_name) = bin_file_name(first) {
+            return cache.tool_bin_dir(tool, version).join(file_name);
+        }
+    }
+    cache.tool_bin_path(tool, version)
+}
+
+fn find_bin_path<'a>(bin_name: &str, bin_paths: &'a [String]) -> Option<&'a str> {
+    bin_paths.iter().find_map(|path| {
+        let stem = Path::new(path).file_stem()?.to_str()?;
+        if stem == bin_name {
+            Some(path.as_str())
+        } else {
+            None
+        }
     })
 }
 

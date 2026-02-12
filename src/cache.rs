@@ -22,12 +22,16 @@ impl Cache {
         self.root.join(tool).join(version)
     }
 
+    pub fn tool_bin_dir(&self, tool: &str, version: &str) -> PathBuf {
+        self.tool_version_dir(tool, version).join("bin")
+    }
+
     pub fn tool_bin_path(&self, tool: &str, version: &str) -> PathBuf {
         let mut name = tool.to_string();
         if cfg!(windows) {
             name.push_str(".exe");
         }
-        self.tool_version_dir(tool, version).join("bin").join(name)
+        self.tool_bin_dir(tool, version).join(name)
     }
 
     pub fn is_installed(&self, tool: &str, version: &str) -> bool {

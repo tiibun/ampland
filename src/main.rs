@@ -162,13 +162,11 @@ fn run() -> Result<(), AppError> {
         }
         Command::Which { tool } => {
             let cwd = resolve_path(cli.path, None)?;
-            let resolution = resolve_tool(&config, &cwd, &tool)?;
-            let bin_path = cache.tool_bin_path(&tool, &resolution.version);
-            if !bin_path.exists() {
-                return Err(AppError::ToolNotInstalled { tool });
-            }
+            let target = Target::current()?;
+            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let resolution = shim::resolve_bin_path(&config, &cwd, &tool, &cache, &manifest, &target)?;
             if !cli.quiet {
-                println!("{}", bin_path.display());
+                println!("{}", resolution.path.display());
             }
         }
         Command::Explain { tool } => {

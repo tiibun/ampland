@@ -6,8 +6,10 @@ use serde::Serialize;
 use crate::cache::Cache;
 use crate::config::Config;
 use crate::error::AppError;
+use crate::manifest::{ManifestStore, Target};
 use crate::paths::{cache_dir, config_path, shims_dir};
 use crate::resolve::resolve_tools;
+use crate::shim::list_shim_names;
 
 #[derive(Debug, Serialize)]
 pub struct DoctorReport {
@@ -24,7 +26,10 @@ pub fn run_doctor(config: &Config, cwd: &Path) -> Result<DoctorReport, AppError>
     let cache_root = cache_dir()?;
     let shims_root = shims_dir()?;
     let shims_in_path = path_contains(&shims_root);
-    let conflicts = detect_conflicts(&shims_root, config);
+    let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+    let target = Target::current()?;
+    let shim_names = list_shim_names(config, &manifest, &target);
+    let conflicts = detect_conflicts(&shims_root, &shim_names);
 
     let cache = Cache::new(cache_root.clone());
     let resolve = resolve_tools(config, cwd)?;
@@ -52,11 +57,11 @@ fn path_contains(target: &Path) -> bool {
     entries.iter().any(|entry| entry == target)
 }
 
-fn detect_conflicts(shims_root: &Path, config: &Config) -> Vec<PathBuf> {
+fn detect_conflicts(shims_root: &Path, shim_names: &[String]) -> Vec<PathBuf> {
     let mut conflicts = Vec::new();
     let path_var = env::var("PATH").unwrap_or_default();
     let entries: Vec<PathBuf> = env::split_paths(&path_var).collect();
-    for tool in all_tools(config) {
+    for tool in shim_names {
         for entry in &entries {
             let candidate = tool_in_dir(entry, &tool);
             if candidate.exists() {
@@ -78,15 +83,3 @@ fn tool_in_dir(dir: &Path, tool: &str) -> PathBuf {
     dir.join(name)
 }
 
-fn all_tools(config: &Config) -> Vec<String> {
-    let mut set = std::collections::BTreeSet::new();
-    for tool in config.global.tools.keys() {
-        set.insert(tool.clone());
-    }
-    for scope in &config.scopes {
-        for tool in scope.tools.keys() {
-            set.insert(tool.clone());
-        }
-    }
-    set.into_iter().collect()
-}

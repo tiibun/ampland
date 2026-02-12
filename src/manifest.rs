@@ -83,6 +83,8 @@ pub struct ManifestToolVersion {
     pub format: String,
     #[serde(default)]
     pub bin_path: Option<String>,
+    #[serde(default)]
+    pub bin_paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -91,7 +93,7 @@ pub struct ResolvedPackage {
     pub sha256: String,
     pub size: Option<u64>,
     pub format: PackageFormat,
-    pub bin_path: Option<String>,
+    pub bin_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,9 +130,20 @@ impl Manifest {
             sha256: version_entry.sha256.clone(),
             size: version_entry.size,
             format,
-            bin_path: version_entry.bin_path.clone(),
+            bin_paths: resolve_bin_paths(version_entry),
         })
     }
+}
+
+fn resolve_bin_paths(version_entry: &ManifestToolVersion) -> Vec<String> {
+    if let Some(paths) = &version_entry.bin_paths {
+        return paths.clone();
+    }
+    version_entry
+        .bin_path
+        .clone()
+        .into_iter()
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -420,7 +433,7 @@ name = "node"
   url = "https://example.com/node.tar.gz"
   sha256 = "deadbeef"
   format = "tar.gz"
-  bin_path = "node/bin/node"
+    bin_paths = ["node/bin/node", "node/bin/npm", "node/bin/npx"]
 
   [[tool.version]]
   ver = "22.3.0"
@@ -446,7 +459,10 @@ name = "node"
         assert_eq!(resolved.url, "https://example.com/node.tar.gz");
         assert_eq!(resolved.sha256, "deadbeef");
         assert_eq!(resolved.format, PackageFormat::TarGz);
-        assert_eq!(resolved.bin_path.as_deref(), Some("node/bin/node"));
+        assert_eq!(
+            resolved.bin_paths,
+            vec!["node/bin/node", "node/bin/npm", "node/bin/npx"]
+        );
     }
 
     #[test]
