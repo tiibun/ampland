@@ -289,11 +289,27 @@ impl ManifestStore {
             .clone()
             .unwrap_or_else(|| format!("{url}.sig"));
 
-        let manifest_text = fetch_text(&url)?;
-        let sig_text = fetch_text(&sig_url)?;
-        verify_signature(public_key, manifest_text.as_bytes(), sig_text.trim())?;
-        let manifest = Manifest::parse(&manifest_text)?;
-        self.write_cache(&manifest_text, sig_text.trim(), &manifest)?;
+        let manifest_text = match fetch_text(&url) {
+            Ok(text) => text,
+            Err(_) => return Ok(None),
+        };
+        let sig_text = match fetch_text(&sig_url) {
+            Ok(text) => text,
+            Err(_) => return Ok(None),
+        };
+        if verify_signature(public_key, manifest_text.as_bytes(), sig_text.trim()).is_err() {
+            return Ok(None);
+        }
+        let manifest = match Manifest::parse(&manifest_text) {
+            Ok(manifest) => manifest,
+            Err(_) => return Ok(None),
+        };
+        if self
+            .write_cache(&manifest_text, sig_text.trim(), &manifest)
+            .is_err()
+        {
+            return Ok(None);
+        }
         Ok(Some(manifest))
     }
 

@@ -4,7 +4,61 @@ ampland is a tool manager that keeps configuration in a single user file and
 installs tool versions into a user cache, with shims that dispatch to the
 selected binaries.
 
-Key ideas:
+## Installation
+
+### Build from source
+
+```
+cargo build --release
+```
+
+The binary will be at `target/release/ampland`.
+
+### Run without installing
+
+```
+cargo run -- <args>
+```
+
+## Quick start
+
+Make sure the shims directory is on `PATH` before running commands.
+
+macOS and Linux (bash/zsh):
+
+```
+export PATH="$HOME/.local/ampland/shims:$PATH"
+```
+
+macOS and Linux (fish):
+
+```
+set -gx PATH $HOME/.local/ampland/shims $PATH
+```
+
+Windows (PowerShell):
+
+```
+$env:Path = "$env:LOCALAPPDATA\ampland\shims;$env:Path"
+```
+
+```
+ampland install node 22.1.0
+ampland use node 22.1.0
+ampland which node
+```
+
+Common commands:
+
+- `ampland use <tool> <version>`
+- `ampland install <tool> <version>`
+- `ampland list`
+- `ampland search [query]`
+- `ampland doctor`
+
+`ampland doctor` also reports whether the shims directory is early in `PATH`.
+
+Concepts:
 - Configuration lives in:
 	- macOS: `~/Library/Application Support/ampland/config.toml`
 	- Linux: `~/.config/ampland/config.toml`
