@@ -25,6 +25,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(about = "Set the active tool version")]
     Use {
         tool: String,
         version: String,
@@ -33,19 +34,25 @@ pub enum Command {
         #[arg(long)]
         path: Option<PathBuf>,
     },
+    #[command(about = "Install a tool version")]
     Install {
         tool: String,
         version: Option<String>,
     },
+    #[command(about = "Uninstall a specific version")]
     Uninstall {
         tool: String,
         version: String,
     },
+    #[command(about = "Search tools by name")]
     Search {
         query: Option<String>,
     },
+    #[command(about = "List installed tools")]
     List,
+    #[command(about = "Clean cache and unused data")]
     Gc,
+    #[command(about = "Export current settings")]
     Export {
         #[arg(long)]
         path: Option<PathBuf>,
@@ -54,6 +61,7 @@ pub enum Command {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    #[command(about = "Import settings from a file")]
     Import {
         #[arg(long)]
         path: Option<PathBuf>,
@@ -61,14 +69,19 @@ pub enum Command {
         format: Format,
         file: PathBuf,
     },
+    #[command(about = "Check environment health")]
     Doctor,
+    #[command(about = "Show resolved executable path")]
     Which {
         tool: String,
     },
+    #[command(about = "Explain tool resolution")]
     Explain {
         tool: String,
     },
+    #[command(about = "Update the manifest")]
     UpdateManifest,
+    #[command(about = "Manage shims")]
     Shim {
         #[command(subcommand)]
         command: ShimCommand,
@@ -77,7 +90,9 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ShimCommand {
+    #[command(about = "Rebuild shims")]
     Rebuild,
+    #[command(about = "Add a shim for a tool")]
     Add { tool: String },
 }
 
