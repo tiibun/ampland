@@ -21,7 +21,7 @@ use crate::config::{Config, LockFile, Scope};
 use crate::doctor::run_doctor;
 use crate::error::AppError;
 use crate::installer::install;
-use crate::manifest::{ManifestStore, Target};
+use crate::manifest::{Manifest, ManifestStore, Target};
 use crate::paths::{cache_dir, normalize_path, shims_dir};
 use crate::resolve::{resolve_tool, resolve_tools, ResolutionSource};
 
@@ -56,7 +56,24 @@ fn run() -> Result<(), AppError> {
         } => {
             let cwd = resolve_path(cli.path, path)?;
             let pattern = normalize_scope_pattern(&cwd);
+            let target = Target::current()?;
+            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
             upsert_scope_tool(&mut config, &pattern, &tool, &version);
+            if !cache.is_installed(&tool, &version) {
+                let package = manifest
+                    .resolve(&tool, &version, &target)
+                    .ok_or_else(|| AppError::Cache {
+                        message: format!(
+                            "no installer for {tool}@{version} ({}/{})",
+                            target.platform, target.arch
+                        ),
+                    })?;
+                let bin_path = install(&cache, &tool, &version, &package)?;
+                if !cli.quiet {
+                    println!("installed {tool}@{version} -> {}", bin_path.display());
+                }
+            }
             config.save(&config_path)?;
             if !cli.quiet {
                 println!("set {tool}@{version} for {pattern}");
@@ -70,6 +87,7 @@ fn run() -> Result<(), AppError> {
             };
             let target = Target::current()?;
             let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
             let package = manifest
                 .resolve(&tool, &version, &target)
                 .ok_or_else(|| AppError::Cache {
@@ -299,6 +317,22 @@ fn normalize_scope_pattern(path: &Path) -> String {
 
 fn contains_glob(value: &str) -> bool {
     value.contains('*') || value.contains('?') || value.contains('[')
+}
+
+fn resolve_version_spec(
+    manifest: &Manifest,
+    tool: &str,
+    version: &str,
+    target: &Target,
+) -> Result<String, AppError> {
+    manifest
+        .resolve_version_spec(tool, version, target)
+        .ok_or_else(|| AppError::Cache {
+            message: format!(
+                "no installer for {tool}@{version} ({}/{})",
+                target.platform, target.arch
+            ),
+        })
 }
 
 fn upsert_scope(config: &mut Config, lock: &LockFile) -> Result<(), AppError> {

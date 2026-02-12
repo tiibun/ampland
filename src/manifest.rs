@@ -6,6 +6,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use fs2::FileExt;
+use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use crate::config::ManifestConfig;
@@ -105,6 +106,71 @@ pub enum PackageFormat {
 impl Manifest {
     pub fn parse(contents: &str) -> Result<Self, AppError> {
         Ok(toml::from_str(contents)?)
+    }
+
+    pub fn resolve_version_spec(
+        &self,
+        tool: &str,
+        version_spec: &str,
+        target: &Target,
+    ) -> Option<String> {
+        let tool_entry = self.tools.iter().find(|entry| entry.name == tool)?;
+        if let Some(entry) = tool_entry.versions.iter().find(|entry| {
+            entry.platform == target.platform
+                && entry.arch == target.arch
+                && entry.ver == version_spec
+        }) {
+            return Some(entry.ver.clone());
+        }
+
+        let normalized_spec = version_spec.trim_start_matches('v');
+        if normalized_spec != version_spec {
+            if let Some(entry) = tool_entry.versions.iter().find(|entry| {
+                entry.platform == target.platform
+                    && entry.arch == target.arch
+                    && entry.ver == normalized_spec
+            }) {
+                return Some(entry.ver.clone());
+            }
+        }
+
+        let parts: Vec<&str> = normalized_spec.split('.').collect();
+        if parts.len() != 1 && parts.len() != 2 {
+            return None;
+        }
+
+        let major = parts[0].parse::<u64>().ok()?;
+        let minor = if parts.len() == 2 {
+            Some(parts[1].parse::<u64>().ok()?)
+        } else {
+            None
+        };
+
+        let mut best: Option<(Version, String)> = None;
+        for entry in tool_entry.versions.iter().filter(|entry| {
+            entry.platform == target.platform && entry.arch == target.arch
+        }) {
+            let parsed = match Version::parse(entry.ver.trim_start_matches('v')) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+
+            if parsed.major != major {
+                continue;
+            }
+            if let Some(minor) = minor {
+                if parsed.minor != minor {
+                    continue;
+                }
+            }
+
+            match &best {
+                Some((best_version, _)) if &parsed <= best_version => {}
+                _ => best = Some((parsed, entry.ver.clone())),
+            }
+        }
+
+        best.map(|(_, ver)| ver)
     }
 
     pub fn resolve(&self, tool: &str, version: &str, target: &Target) -> Option<ResolvedPackage> {

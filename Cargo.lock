@@ -38,6 +38,7 @@ dependencies = [
  "flate2",
  "fs2",
  "globset",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
