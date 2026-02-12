@@ -3,6 +3,8 @@ mod cli;
 mod config;
 mod doctor;
 mod error;
+mod installer;
+mod manifest;
 mod paths;
 mod resolve;
 mod shim;
@@ -18,6 +20,8 @@ use crate::cli::{Cli, Command, ShimCommand};
 use crate::config::{Config, LockFile, Scope};
 use crate::doctor::run_doctor;
 use crate::error::AppError;
+use crate::installer::install;
+use crate::manifest::{ManifestStore, Target};
 use crate::paths::{cache_dir, normalize_path, shims_dir};
 use crate::resolve::{resolve_tool, resolve_tools, ResolutionSource};
 
@@ -51,7 +55,17 @@ fn run() -> Result<(), AppError> {
                 Some(version) => version,
                 None => resolve_tool(&config, &cwd, &tool)?.version,
             };
-            let bin_path = cache.install_placeholder(&tool, &version)?;
+            let target = Target::current()?;
+            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let package = manifest
+                .resolve(&tool, &version, &target)
+                .ok_or_else(|| AppError::Cache {
+                    message: format!(
+                        "no installer for {tool}@{version} ({}/{})",
+                        target.platform, target.arch
+                    ),
+                })?;
+            let bin_path = install(&cache, &tool, &version, &package)?;
             if !cli.quiet {
                 println!("installed {tool}@{version} -> {}", bin_path.display());
             }
@@ -182,6 +196,18 @@ fn run() -> Result<(), AppError> {
                         println!("source: scope {pattern} (fallback to global)")
                     }
                 }
+            }
+        }
+        Command::UpdateManifest => {
+            let store = ManifestStore::new(&cache_root, &config.manifest);
+            let manifest = store.refresh()?;
+            if cli.json {
+                let mut output = BTreeMap::new();
+                output.insert("version", manifest.version.to_string());
+                output.insert("generated_at", manifest.generated_at);
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else if !cli.quiet {
+                println!("manifest updated (version {})", manifest.version);
             }
         }
         Command::Shim { command } => match command {

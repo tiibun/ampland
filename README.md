@@ -30,6 +30,11 @@ Example `~/.config/ampland/config.toml`:
 node = "20.12.0"
 python = "3.12.1"
 
+[manifest]
+url = "https://github.com/ORG/REPO/releases/latest/download/installers.toml"
+public_key = "HEX_ENCODED_ED25519_PUBLIC_KEY"
+ttl_hours = 24
+
 [[scope]]
 path = "/Users/toshi/work/ampland/**"
 [scope.tools]
@@ -71,6 +76,26 @@ Windows layout:
 Shims are tiny executables that resolve the correct version and exec the
 selected binary.
 
+## Installer manifest
+
+ampland uses a signed TOML manifest that maps tools and versions to download
+URLs. A minimal manifest is embedded in the binary, and ampland will
+optionally fetch and cache a newer manifest if `manifest.url` and
+`manifest.public_key` are set.
+
+Manifest behavior:
+- The cached manifest is refreshed when the TTL has expired.
+- Signature verification uses Ed25519 with a public key provided in config.
+- If remote fetch or verification fails, ampland falls back to the cached or
+	embedded manifest.
+
+Manifest fields:
+- `manifest.url`: URL to `installers.toml`.
+- `manifest.sig_url`: optional; defaults to `installers.toml.sig` at the same
+	base URL.
+- `manifest.public_key`: hex-encoded Ed25519 public key.
+- `manifest.ttl_hours`: cache TTL in hours (default 24).
+
 ## Export and import
 
 Export the resolved tool versions for the current directory:
@@ -100,6 +125,7 @@ Core commands:
 - `ampland uninstall <tool> <version>`
 - `ampland list`
 - `ampland gc`
+- `ampland update-manifest`
 - `ampland export --path <dir> [--format toml|json]`
 - `ampland import --path <dir> <file>`
 - `ampland doctor`

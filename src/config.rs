@@ -13,6 +13,8 @@ pub struct Config {
     pub global: Global,
     #[serde(default, rename = "scope")]
     pub scopes: Vec<Scope>,
+    #[serde(default)]
+    pub manifest: ManifestConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -27,6 +29,18 @@ pub struct Scope {
     pub pattern: String,
     #[serde(default)]
     pub tools: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ManifestConfig {
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub sig_url: Option<String>,
+    #[serde(default)]
+    pub public_key: Option<String>,
+    #[serde(default)]
+    pub ttl_hours: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

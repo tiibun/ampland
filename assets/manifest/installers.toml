@@ -1,0 +1,142 @@
+version = 1
+generated_at = "2026-02-11T00:00:00Z"
+
+[[tool]]
+name = "node"
+vendor = "nodejs"
+default_version = "22.22.0"
+
+	[[tool.version]]
+	ver = "22.22.0"
+	platform = "macos"
+	arch = "arm64"
+	url = "https://nodejs.org/dist/v22.22.0/node-v22.22.0-darwin-arm64.tar.gz"
+	sha256 = "5ed4db0fcf1eaf84d91ad12462631d73bf4576c1377e192d222e48026a902640"
+	format = "tar.gz"
+	bin_path = "node-v22.22.0-darwin-arm64/bin/node"
+
+	[[tool.version]]
+	ver = "22.22.0"
+	platform = "macos"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v22.22.0/node-v22.22.0-darwin-x64.tar.gz"
+	sha256 = "5ea50c9d6dea3dfa3abb66b2656f7a4e1c8cef23432b558d45fb538c7b5dedce"
+	format = "tar.gz"
+	bin_path = "node-v22.22.0-darwin-x64/bin/node"
+
+	[[tool.version]]
+	ver = "22.22.0"
+	platform = "linux"
+	arch = "arm64"
+	url = "https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-arm64.tar.xz"
+	sha256 = "1bf1eb9ee63ffc4e5d324c0b9b62cf4a289f44332dfef9607cea1a0d9596ba6f"
+	format = "tar.xz"
+	bin_path = "node-v22.22.0-linux-arm64/bin/node"
+
+	[[tool.version]]
+	ver = "22.22.0"
+	platform = "linux"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz"
+	sha256 = "9aa8e9d2298ab68c600bd6fb86a6c13bce11a4eca1ba9b39d79fa021755d7c37"
+	format = "tar.xz"
+	bin_path = "node-v22.22.0-linux-x64/bin/node"
+
+	[[tool.version]]
+	ver = "22.22.0"
+	platform = "windows"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v22.22.0/node-v22.22.0-win-x64.zip"
+	sha256 = "c97fa376d2becdc8863fcd3ca2dd9a83a9f3468ee7ccf7a6d076ec66a645c77a"
+	format = "zip"
+	bin_path = "node.exe"
+
+	[[tool.version]]
+	ver = "20.20.0"
+	platform = "macos"
+	arch = "arm64"
+	url = "https://nodejs.org/dist/v20.20.0/node-v20.20.0-darwin-arm64.tar.gz"
+	sha256 = "69b98aa4662032ab06bd92216f0aebb2727d7ee4e1eb79ea5787bbbb38af4801"
+	format = "tar.gz"
+	bin_path = "node-v20.20.0-darwin-arm64/bin/node"
+
+	[[tool.version]]
+	ver = "20.20.0"
+	platform = "macos"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v20.20.0/node-v20.20.0-darwin-x64.tar.gz"
+	sha256 = "69bf9b294dc04e3b97c3d5e4f16b3c634201b7f5f617fb65d93a9a9ac4bec0f0"
+	format = "tar.gz"
+	bin_path = "node-v20.20.0-darwin-x64/bin/node"
+
+	[[tool.version]]
+	ver = "20.20.0"
+	platform = "linux"
+	arch = "arm64"
+	url = "https://nodejs.org/dist/v20.20.0/node-v20.20.0-linux-arm64.tar.xz"
+	sha256 = "752113754a7dddf0622b3740a2b2bec3dbaf1792a18711b55871d76444d8892a"
+	format = "tar.xz"
+	bin_path = "node-v20.20.0-linux-arm64/bin/node"
+
+	[[tool.version]]
+	ver = "20.20.0"
+	platform = "linux"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v20.20.0/node-v20.20.0-linux-x64.tar.xz"
+	sha256 = "4f48b52acf42130844a3a75e94da0e9629009d09e4101b2304895c24f3fbe609"
+	format = "tar.xz"
+	bin_path = "node-v20.20.0-linux-x64/bin/node"
+
+	[[tool.version]]
+	ver = "20.20.0"
+	platform = "windows"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v20.20.0/node-v20.20.0-win-x64.zip"
+	sha256 = "32f24e1405b113d4e01ad2585c92024df673b6156ef6f43a5469a75bf52c0a5a"
+	format = "zip"
+	bin_path = "node.exe"
+
+	[[tool.version]]
+	ver = "18.20.8"
+	platform = "macos"
+	arch = "arm64"
+	url = "https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-arm64.tar.gz"
+	sha256 = "bae4965d29d29bd32f96364eefbe3bca576a03e917ddbb70b9330d75f2cacd76"
+	format = "tar.gz"
+	bin_path = "node-v18.20.8-darwin-arm64/bin/node"
+
+	[[tool.version]]
+	ver = "18.20.8"
+	platform = "macos"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v18.20.8/node-v18.20.8-darwin-x64.tar.gz"
+	sha256 = "ed2554677188f4afc0d050ecd8bd56effb2572d6518f8da6d40321ede6698509"
+	format = "tar.gz"
+	bin_path = "node-v18.20.8-darwin-x64/bin/node"
+
+	[[tool.version]]
+	ver = "18.20.8"
+	platform = "linux"
+	arch = "arm64"
+	url = "https://nodejs.org/dist/v18.20.8/node-v18.20.8-linux-arm64.tar.xz"
+	sha256 = "224e569dbe7b0ea4628ce383d9d482494b57ee040566583f1c54072c86d1116b"
+	format = "tar.xz"
+	bin_path = "node-v18.20.8-linux-arm64/bin/node"
+
+	[[tool.version]]
+	ver = "18.20.8"
+	platform = "linux"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v18.20.8/node-v18.20.8-linux-x64.tar.xz"
+	sha256 = "5467ee62d6af1411d46b6a10e3fb5cacc92734dbcef465fea14e7b90993001c9"
+	format = "tar.xz"
+	bin_path = "node-v18.20.8-linux-x64/bin/node"
+
+	[[tool.version]]
+	ver = "18.20.8"
+	platform = "windows"
+	arch = "x64"
+	url = "https://nodejs.org/dist/v18.20.8/node-v18.20.8-win-x64.zip"
+	sha256 = "1a1e40260a6facba83636e4cd0ba01eb5bd1386896824b36645afba44857384a"
+	format = "zip"
+	bin_path = "node.exe"

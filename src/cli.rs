@@ -57,6 +57,7 @@ pub enum Command {
     Explain {
         tool: String,
     },
+    UpdateManifest,
     Shim {
         #[command(subcommand)]
         command: ShimCommand,

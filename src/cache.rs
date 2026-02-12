@@ -1,6 +1,5 @@
 use std::fs::{self, File};
-use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 
@@ -13,6 +12,10 @@ pub struct Cache {
 impl Cache {
     pub fn new(root: PathBuf) -> Self {
         Cache { root }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     pub fn tool_version_dir(&self, tool: &str, version: &str) -> PathBuf {
@@ -31,34 +34,15 @@ impl Cache {
         self.tool_bin_path(tool, version).exists()
     }
 
-    pub fn install_placeholder(&self, tool: &str, version: &str) -> Result<PathBuf, AppError> {
+    pub fn with_lock<T, F: FnOnce() -> Result<T, AppError>>(&self, f: F) -> Result<T, AppError> {
         let lock_path = self.root.join(".lock");
         fs::create_dir_all(&self.root)?;
         let lock_file = File::create(&lock_path)?;
         lock_file.lock_exclusive()?;
 
-        let bin_path = self.tool_bin_path(tool, version);
-        if let Some(parent) = bin_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        if !bin_path.exists() {
-            let mut file = File::create(&bin_path)?;
-            writeln!(
-                file,
-                "ampland placeholder for {tool} {version}. Replace with a real installer."
-            )?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = file.metadata()?.permissions();
-                perms.set_mode(0o755);
-                fs::set_permissions(&bin_path, perms)?;
-            }
-        }
-
-        fs2::FileExt::unlock(&lock_file)?;
-        Ok(bin_path)
+        let result = f();
+        let _ = lock_file.unlock();
+        result
     }
 
     pub fn uninstall(&self, tool: &str, version: &str) -> Result<(), AppError> {
