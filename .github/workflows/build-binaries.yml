@@ -1,0 +1,46 @@
+name: build-binaries
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bin_path: target/release/ampland
+            artifact_name: ampland-linux-x64
+          - os: macos-latest
+            bin_path: target/release/ampland
+            artifact_name: ampland-macos-arm64
+          - os: windows-latest
+            bin_path: target/release/ampland.exe
+            artifact_name: ampland-windows-x64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.bin_path }}
+          if-no-files-found: error
