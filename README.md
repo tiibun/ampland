@@ -5,7 +5,9 @@ installs tool versions into a user cache, with shims that dispatch to the
 selected binaries.
 
 Key ideas:
-- Configuration lives in `~/.config/ampland/config.toml`.
+- Configuration lives in:
+	- macOS: `~/Library/Application Support/ampland/config.toml`
+	- Linux: `~/.config/ampland/config.toml`
 - Installed tool versions live under `~/.local/ampland/cache/`.
 - Shims are created so `tool` resolves to the right version based on the
 	current working directory.
@@ -23,7 +25,7 @@ On Windows, shims should be native binaries (not `.cmd`) to avoid issues with
 ampland uses a global section and optional scoped overrides based on the
 current working directory.
 
-Example `~/.config/ampland/config.toml`:
+Example `~/Library/Application Support/ampland/config.toml`:
 
 ```toml
 [global.tools]
@@ -121,8 +123,10 @@ ampland <command> [flags]
 ```
 
 Core commands:
+- `ampland use <tool> <version> [--path <dir>]`
 - `ampland install <tool> <version>`
 - `ampland uninstall <tool> <version>`
+- `ampland search [query]`
 - `ampland list`
 - `ampland gc`
 - `ampland update-manifest`

@@ -9,7 +9,7 @@ mod paths;
 mod resolve;
 mod shim;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -49,6 +49,19 @@ fn run() -> Result<(), AppError> {
     let cache = Cache::new(cache_root.clone());
 
     match cli.command {
+        Command::Use {
+            tool,
+            version,
+            path,
+        } => {
+            let cwd = resolve_path(cli.path, path)?;
+            let pattern = normalize_scope_pattern(&cwd);
+            upsert_scope_tool(&mut config, &pattern, &tool, &version);
+            config.save(&config_path)?;
+            if !cli.quiet {
+                println!("set {tool}@{version} for {pattern}");
+            }
+        }
         Command::Install { tool, version } => {
             let cwd = resolve_path(cli.path, None)?;
             let version = match version {
@@ -74,6 +87,43 @@ fn run() -> Result<(), AppError> {
             cache.uninstall(&tool, &version)?;
             if !cli.quiet {
                 println!("removed {tool}@{version}");
+            }
+        }
+        Command::Search { query } => {
+            let target = Target::current()?;
+            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let needle = query.map(|value| value.to_lowercase());
+            let mut results: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+            for tool in &manifest.tools {
+                if let Some(value) = &needle {
+                    if !tool.name.to_lowercase().contains(value) {
+                        continue;
+                    }
+                }
+
+                let mut versions: Vec<String> = tool
+                    .versions
+                    .iter()
+                    .filter(|entry| {
+                        entry.platform == target.platform && entry.arch == target.arch
+                    })
+                    .map(|entry| entry.ver.clone())
+                    .collect();
+                if versions.is_empty() {
+                    continue;
+                }
+                versions.sort();
+                versions.dedup();
+                results.insert(tool.name.clone(), versions);
+            }
+
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else if !cli.quiet {
+                for (tool, versions) in results {
+                    println!("{tool}: {}", versions.join(", "));
+                }
             }
         }
         Command::List => {
@@ -267,4 +317,22 @@ fn upsert_scope(config: &mut Config, lock: &LockFile) -> Result<(), AppError> {
         });
     }
     Ok(())
+}
+
+fn upsert_scope_tool(config: &mut Config, pattern: &str, tool: &str, version: &str) {
+    for scope in &mut config.scopes {
+        if scope.pattern == pattern {
+            scope
+                .tools
+                .insert(tool.to_string(), version.to_string());
+            return;
+        }
+    }
+
+    let mut tools = HashMap::new();
+    tools.insert(tool.to_string(), version.to_string());
+    config.scopes.push(Scope {
+        pattern: pattern.to_string(),
+        tools,
+    });
 }

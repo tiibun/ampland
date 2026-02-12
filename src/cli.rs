@@ -25,6 +25,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    Use {
+        tool: String,
+        version: String,
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
     Install {
         tool: String,
         version: Option<String>,
@@ -32,6 +38,9 @@ pub enum Command {
     Uninstall {
         tool: String,
         version: String,
+    },
+    Search {
+        query: Option<String>,
     },
     List,
     Gc,

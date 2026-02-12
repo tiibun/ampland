@@ -53,7 +53,6 @@ impl Target {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
     pub version: u32,
@@ -62,14 +61,9 @@ pub struct Manifest {
     pub tools: Vec<ManifestTool>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ManifestTool {
     pub name: String,
-    #[serde(default)]
-    pub vendor: Option<String>,
-    #[serde(default)]
-    pub default_version: Option<String>,
     #[serde(default, rename = "version")]
     pub versions: Vec<ManifestToolVersion>,
 }
