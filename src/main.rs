@@ -38,7 +38,8 @@ fn run() -> Result<(), AppError> {
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("ampland");
-    if exec_name != "ampland" {
+    let exec_lower = exec_name.to_ascii_lowercase();
+    if exec_lower != "ampland" && !exec_lower.starts_with("ampland-") {
         return shim::run_as_shim(exec_name);
     }
 
