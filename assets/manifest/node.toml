@@ -49,7 +49,7 @@ default_version = "24.13.1"
 	url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-win-x64.zip"
 	sha256 = "fba577c4bb87df04d54dd87bbdaa5a2272f1f99a2acbf9152e1a91b8b5f0b279"
 	format = "zip"
-	bin_paths = ["node.exe", "npm.cmd", "npx.cmd"]
+	bin_paths = ["node-v24.13.1-win-x64/node.exe", "node-v24.13.1-win-x64/npm.cmd", "node-v24.13.1-win-x64/npx.cmd"]
 
 	[[tool.version]]
 	ver = "22.22.0"
@@ -94,7 +94,7 @@ default_version = "24.13.1"
 	url = "https://nodejs.org/dist/v22.22.0/node-v22.22.0-win-x64.zip"
 	sha256 = "c97fa376d2becdc8863fcd3ca2dd9a83a9f3468ee7ccf7a6d076ec66a645c77a"
 	format = "zip"
-	bin_paths = ["node.exe", "npm.cmd", "npx.cmd"]
+	bin_paths = ["node-v22.22.0-win-x64/node.exe", "node-v22.22.0-win-x64/npm.cmd", "node-v22.22.0-win-x64/npx.cmd"]
 
 	[[tool.version]]
 	ver = "20.20.0"
@@ -139,7 +139,7 @@ default_version = "24.13.1"
 	url = "https://nodejs.org/dist/v20.20.0/node-v20.20.0-win-x64.zip"
 	sha256 = "32f24e1405b113d4e01ad2585c92024df673b6156ef6f43a5469a75bf52c0a5a"
 	format = "zip"
-	bin_paths = ["node.exe", "npm.cmd", "npx.cmd"]
+	bin_paths = ["node-v20.20.0-win-x64/node.exe", "node-v20.20.0-win-x64/npm.cmd", "node-v20.20.0-win-x64/npx.cmd"]
 
 	[[tool.version]]
 	ver = "18.20.8"
@@ -184,4 +184,4 @@ default_version = "24.13.1"
 	url = "https://nodejs.org/dist/v18.20.8/node-v18.20.8-win-x64.zip"
 	sha256 = "1a1e40260a6facba83636e4cd0ba01eb5bd1386896824b36645afba44857384a"
 	format = "zip"
-	bin_paths = ["node.exe", "npm.cmd", "npx.cmd"]
+	bin_paths = ["node-v18.20.8-win-x64/node.exe", "node-v18.20.8-win-x64/npm.cmd", "node-v18.20.8-win-x64/npx.cmd"]

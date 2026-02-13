@@ -16,6 +16,7 @@ toml = "0.8.12"
 ed25519-dalek = "2.1.1"
 flate2 = "1.0.28"
 sha2 = "0.10.8"
+time = { version = "0.3.36", features = ["formatting"] }
 tar = "0.4.40"
 tempfile = "3.10.1"
 ureq = { version = "2.9.6", features = ["tls"] }
@@ -25,3 +26,7 @@ zip = "0.6.6"
 [[bin]]
 name = "manifest-merge"
 path = "src/bin/manifest_merge.rs"
+
+[[bin]]
+name = "manifest-generate"
+path = "src/bin/manifest_generate.rs"
