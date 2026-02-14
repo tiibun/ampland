@@ -2,6 +2,7 @@
 name = "ampland"
 version = "0.1.0"
 edition = "2021"
+default-run = "ampland"
 
 [dependencies]
 clap = { version = "4.5.3", features = ["derive"] }
