@@ -118,3 +118,55 @@ impl Cache {
         Ok(removed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn path_helpers_and_install_state_work() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        assert_eq!(cache.root(), temp.path());
+        assert!(cache.tool_version_dir("node", "22").ends_with("node/22"));
+        assert!(cache.tool_bin_dir("node", "22").ends_with("node/22/bin"));
+
+        assert!(!cache.is_installed("node", "22"));
+        let bin = cache.tool_bin_path("node", "22");
+        fs::create_dir_all(bin.parent().expect("parent")).expect("mkdir");
+        fs::write(&bin, b"bin").expect("write");
+        assert!(cache.is_installed("node", "22"));
+    }
+
+    #[test]
+    fn with_lock_uninstall_list_and_gc_work() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+
+        let value = cache
+            .with_lock(|| Ok::<_, AppError>(123))
+            .expect("with_lock");
+        assert_eq!(value, 123);
+
+        for (tool, version) in [("node", "20"), ("node", "22"), ("bun", "1")] {
+            let bin = cache.tool_bin_path(tool, version);
+            fs::create_dir_all(bin.parent().expect("parent")).expect("mkdir");
+            fs::write(bin, b"x").expect("write");
+        }
+        let listed = cache.list_installed().expect("list");
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].0, "bun");
+        assert_eq!(listed[1].0, "node");
+
+        cache.uninstall("bun", "1").expect("uninstall");
+        assert!(!cache.tool_version_dir("bun", "1").exists());
+
+        let mut keep = HashMap::<String, HashSet<String>>::new();
+        keep.insert("node".into(), HashSet::from(["22".to_string()]));
+        let removed = cache.gc(&keep).expect("gc");
+        assert_eq!(removed.len(), 1);
+        assert!(cache.tool_version_dir("node", "22").exists());
+        assert!(!cache.tool_version_dir("node", "20").exists());
+    }
+}

@@ -40,14 +40,9 @@ pub enum Command {
         version: Option<String>,
     },
     #[command(about = "Uninstall a specific version")]
-    Uninstall {
-        tool: String,
-        version: String,
-    },
+    Uninstall { tool: String, version: String },
     #[command(about = "Search tools by name")]
-    Search {
-        query: Option<String>,
-    },
+    Search { query: Option<String> },
     #[command(about = "List installed tools")]
     List,
     #[command(about = "Clean cache and unused data")]
@@ -72,13 +67,9 @@ pub enum Command {
     #[command(about = "Check environment health")]
     Doctor,
     #[command(about = "Show resolved executable path")]
-    Which {
-        tool: String,
-    },
+    Which { tool: String },
     #[command(about = "Explain tool resolution")]
-    Explain {
-        tool: String,
-    },
+    Explain { tool: String },
     #[command(about = "Update the manifest")]
     UpdateManifest,
     #[command(about = "Manage shims")]

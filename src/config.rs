@@ -90,15 +90,11 @@ impl Config {
     pub fn all_tool_versions(&self) -> HashMap<String, HashSet<String>> {
         let mut map: HashMap<String, HashSet<String>> = HashMap::new();
         for (tool, version) in &self.global.tools {
-            map.entry(tool.clone())
-                .or_default()
-                .insert(version.clone());
+            map.entry(tool.clone()).or_default().insert(version.clone());
         }
         for scope in &self.scopes {
             for (tool, version) in &scope.tools {
-                map.entry(tool.clone())
-                    .or_default()
-                    .insert(version.clone());
+                map.entry(tool.clone()).or_default().insert(version.clone());
             }
         }
         map
@@ -125,5 +121,94 @@ impl LockFile {
             crate::cli::Format::Toml => Ok(toml::from_str(contents)?),
             crate::cli::Format::Json => Ok(serde_json::from_str(contents)?),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::Format;
+
+    fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn load_missing_file_returns_default() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("missing.toml");
+        let (config, loaded_path) = Config::load(Some(&path)).expect("load config");
+        assert!(config.global.tools.is_empty());
+        assert_eq!(loaded_path, path);
+    }
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("a/b/config.toml");
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "22.0.0")]),
+            },
+            scopes: vec![Scope {
+                pattern: "workspace/**".into(),
+                tools: map(&[("bun", "1.2.0")]),
+            }],
+            ..Default::default()
+        };
+        config.save(&path).expect("save");
+        let (loaded, loaded_path) = Config::load(Some(&path)).expect("load");
+        assert_eq!(loaded_path, path);
+        assert_eq!(loaded.global.tools.get("node"), Some(&"22.0.0".to_string()));
+        assert_eq!(loaded.scopes.len(), 1);
+    }
+
+    #[test]
+    fn normalized_scopes_and_all_versions_work() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.0.0")]),
+            },
+            scopes: vec![
+                Scope {
+                    pattern: "~".into(),
+                    tools: map(&[("node", "22.0.0"), ("bun", "1.0.0")]),
+                },
+                Scope {
+                    pattern: "workspace/**".into(),
+                    tools: map(&[("bun", "1.1.0")]),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let normalized = config.normalized_scopes().expect("normalized scopes");
+        assert!(normalized[0].pattern.starts_with('/'));
+
+        let versions = config.all_tool_versions();
+        assert!(versions.get("node").expect("node set").contains("20.0.0"));
+        assert!(versions.get("node").expect("node set").contains("22.0.0"));
+        assert!(versions.get("bun").expect("bun set").contains("1.0.0"));
+        assert!(versions.get("bun").expect("bun set").contains("1.1.0"));
+    }
+
+    #[test]
+    fn lockfile_serialization_roundtrip_for_both_formats() {
+        let lock = LockFile::from_path_and_tools(
+            Path::new("/tmp/work"),
+            map(&[("node", "22.0.0"), ("bun", "1.0.0")]),
+        );
+
+        let toml = lock.to_string(Format::Toml).expect("toml encode");
+        let decoded_toml = LockFile::parse(&toml, Format::Toml).expect("toml decode");
+        assert_eq!(decoded_toml.path, "/tmp/work");
+        assert_eq!(decoded_toml.tools.get("node"), Some(&"22.0.0".to_string()));
+
+        let json = lock.to_string(Format::Json).expect("json encode");
+        let decoded_json = LockFile::parse(&json, Format::Json).expect("json decode");
+        assert_eq!(decoded_json.tools.get("bun"), Some(&"1.0.0".to_string()));
     }
 }

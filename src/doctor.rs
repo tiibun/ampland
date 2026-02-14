@@ -83,3 +83,45 @@ fn tool_in_dir(dir: &Path, tool: &str) -> PathBuf {
     dir.join(name)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_contains_detects_existing_path_entry() {
+        let path_var = std::env::var("PATH").expect("PATH");
+        let first = std::env::split_paths(&path_var)
+            .next()
+            .expect("first PATH entry");
+        assert!(path_contains(&first));
+    }
+
+    #[test]
+    fn detect_conflicts_and_tool_path_helpers_work() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let dir = temp.path().join("tools");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let tool_path = tool_in_dir(&dir, "node");
+        std::fs::write(&tool_path, b"x").expect("write");
+
+        let original = std::env::var_os("PATH");
+        std::env::set_var("PATH", dir.as_os_str());
+        let conflicts = detect_conflicts(Path::new("/different"), &[String::from("node")]);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0], tool_path);
+        let no_conflicts = detect_conflicts(&dir, &[String::from("node")]);
+        assert!(no_conflicts.is_empty());
+        match original {
+            Some(value) => std::env::set_var("PATH", value),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+
+    #[test]
+    fn run_doctor_smoke_with_empty_config() {
+        let config = Config::default();
+        let cwd = std::env::current_dir().expect("cwd");
+        let report = run_doctor(&config, &cwd).expect("doctor");
+        assert!(report.config_path.ends_with("ampland/config.toml"));
+    }
+}

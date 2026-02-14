@@ -151,7 +151,8 @@ fn generate_node_manifest(generated_at: &str) -> Result<ToolManifest, String> {
 fn fetch_latest_node_versions() -> Result<Vec<Version>, String> {
     let url = "https://nodejs.org/dist/index.json";
     let text = fetch_text(url)?;
-    let entries: Vec<NodeIndexEntry> = serde_json::from_str(&text).map_err(|err| err.to_string())?;
+    let entries: Vec<NodeIndexEntry> =
+        serde_json::from_str(&text).map_err(|err| err.to_string())?;
     let mut by_major: HashMap<u64, Version> = HashMap::new();
 
     for entry in entries {
@@ -316,7 +317,10 @@ fn generate_python_manifest(generated_at: &str) -> Result<ToolManifest, String> 
         HashMap::new();
 
     for asset in assets {
-        let target_key = (asset.target.platform.to_string(), asset.target.arch.to_string());
+        let target_key = (
+            asset.target.platform.to_string(),
+            asset.target.arch.to_string(),
+        );
         version_map
             .entry(asset.version.clone())
             .or_default()
@@ -333,15 +337,12 @@ fn generate_python_manifest(generated_at: &str) -> Result<ToolManifest, String> 
 
         for target in python_targets() {
             let target_key = (target.platform.to_string(), target.arch.to_string());
-            let asset = selected
-                .assets
-                .get(&target_key)
-                .ok_or_else(|| {
-                    format!(
-                        "missing python asset for {} {} {}",
-                        selected.version, target.platform, target.arch
-                    )
-                })?;
+            let asset = selected.assets.get(&target_key).ok_or_else(|| {
+                format!(
+                    "missing python asset for {} {} {}",
+                    selected.version, target.platform, target.arch
+                )
+            })?;
 
             let sha256 = match &asset.sha256_url {
                 Some(url) => fetch_sha256(url)?,
@@ -430,7 +431,8 @@ fn select_python_version(
 fn fetch_python_assets() -> Result<Vec<PythonAssetInfo>, String> {
     let url = "https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=20";
     let text = fetch_text(url)?;
-    let releases: Vec<GithubRelease> = serde_json::from_str(&text).map_err(|err| err.to_string())?;
+    let releases: Vec<GithubRelease> =
+        serde_json::from_str(&text).map_err(|err| err.to_string())?;
     let mut assets = Vec::new();
 
     for release in releases {
@@ -473,7 +475,7 @@ fn parse_python_asset(
 
     let (version_date, triple) = match triples.iter().find_map(|triple| {
         let suffix = format!("-{triple}");
-        trimmed.strip_suffix(&suffix).map(|value| (*value, *triple))
+        trimmed.strip_suffix(&suffix).map(|value| (value, *triple))
     }) {
         Some(value) => value,
         None => return Ok(None),

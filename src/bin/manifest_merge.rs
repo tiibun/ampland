@@ -53,7 +53,10 @@ fn parse_args() -> Result<(PathBuf, Vec<PathBuf>), String> {
         }
     }
 
-    Ok((output.unwrap_or_else(|| PathBuf::from("installers.toml")), inputs))
+    Ok((
+        output.unwrap_or_else(|| PathBuf::from("installers.toml")),
+        inputs,
+    ))
 }
 
 fn load_manifest(path: &Path) -> Result<Value, String> {

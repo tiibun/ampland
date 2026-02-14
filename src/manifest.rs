@@ -149,9 +149,11 @@ impl Manifest {
         };
 
         let mut best: Option<(Version, String)> = None;
-        for entry in tool_entry.versions.iter().filter(|entry| {
-            entry.platform == target.platform && entry.arch == target.arch
-        }) {
+        for entry in tool_entry
+            .versions
+            .iter()
+            .filter(|entry| entry.platform == target.platform && entry.arch == target.arch)
+        {
             let parsed = match Version::parse(entry.ver.trim_start_matches('v')) {
                 Ok(value) => value,
                 Err(_) => continue,
@@ -178,9 +180,7 @@ impl Manifest {
     pub fn resolve(&self, tool: &str, version: &str, target: &Target) -> Option<ResolvedPackage> {
         let tool_entry = self.tools.iter().find(|entry| entry.name == tool)?;
         let version_entry = tool_entry.versions.iter().find(|entry| {
-            entry.ver == version
-                && entry.platform == target.platform
-                && entry.arch == target.arch
+            entry.ver == version && entry.platform == target.platform && entry.arch == target.arch
         })?;
 
         let format = match version_entry.format.as_str() {
@@ -205,11 +205,7 @@ fn resolve_bin_paths(version_entry: &ManifestToolVersion) -> Vec<String> {
     if let Some(paths) = &version_entry.bin_paths {
         return paths.clone();
     }
-    version_entry
-        .bin_path
-        .clone()
-        .into_iter()
-        .collect()
+    version_entry.bin_path.clone().into_iter().collect()
 }
 
 #[derive(Debug, Clone)]
@@ -481,16 +477,12 @@ fn manifest_meta_path(root: &Path) -> PathBuf {
 }
 
 fn fetch_text(url: &str) -> Result<String, AppError> {
-    let response = ureq::get(url)
-        .call()
-        .map_err(|err| AppError::Other {
-            message: format!("failed to fetch {url}: {err}"),
-        })?;
-    response
-        .into_string()
-        .map_err(|err| AppError::Other {
-            message: format!("failed to read {url}: {err}"),
-        })
+    let response = ureq::get(url).call().map_err(|err| AppError::Other {
+        message: format!("failed to fetch {url}: {err}"),
+    })?;
+    response.into_string().map_err(|err| AppError::Other {
+        message: format!("failed to read {url}: {err}"),
+    })
 }
 
 fn verify_signature(public_key: &[u8], message: &[u8], sig_hex: &str) -> Result<(), AppError> {
@@ -538,9 +530,11 @@ fn is_zero_key(bytes: &[u8]) -> bool {
 
 fn current_epoch_secs() -> Result<u64, AppError> {
     let now = SystemTime::now();
-    let duration = now.duration_since(UNIX_EPOCH).map_err(|err| AppError::Other {
-        message: format!("invalid system time: {err}"),
-    })?;
+    let duration = now
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| AppError::Other {
+            message: format!("invalid system time: {err}"),
+        })?;
     Ok(duration.as_secs())
 }
 
@@ -632,5 +626,74 @@ name = "node"
         };
         let resolved = manifest.resolve("node", "22.3.0", &target);
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn resolves_version_specs_for_exact_prefixed_and_partial() {
+        let manifest = sample_manifest();
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+        assert_eq!(
+            manifest.resolve_version_spec("node", "22.3.0", &target),
+            Some("22.3.0".to_string())
+        );
+        assert_eq!(
+            manifest.resolve_version_spec("node", "v22.3.0", &target),
+            Some("22.3.0".to_string())
+        );
+        assert_eq!(
+            manifest.resolve_version_spec("node", "22", &target),
+            Some("22.3.0".to_string())
+        );
+        assert_eq!(manifest.resolve_version_spec("node", "23", &target), None);
+    }
+
+    #[test]
+    fn hex_and_key_helpers_validate_input() {
+        assert_eq!(decode_hex("0aFF").expect("hex"), vec![0x0a, 0xff]);
+        assert!(decode_hex("0").is_err());
+        assert!(decode_hex("zz").is_err());
+        assert!(is_zero_key(&[0, 0, 0]));
+        assert!(!is_zero_key(&[0, 1, 0]));
+    }
+
+    #[test]
+    fn cache_path_and_time_helpers_work() {
+        let root = Path::new("/tmp/ampland-tests");
+        assert_eq!(manifest_cache_dir(root), root.join("manifest"));
+        assert_eq!(
+            manifest_toml_path(root),
+            root.join("manifest").join("installers.toml")
+        );
+        assert_eq!(
+            manifest_sig_path(root),
+            root.join("manifest").join("installers.toml.sig")
+        );
+        assert_eq!(
+            manifest_meta_path(root),
+            root.join("manifest").join("installers.meta.json")
+        );
+        assert_eq!(default_format(), "file");
+        assert!(current_epoch_secs().expect("epoch") > 0);
+    }
+
+    #[test]
+    fn manifest_store_load_and_refresh_error_paths() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = ManifestStore::new(temp.path(), &ManifestConfig::default());
+        let loaded = store.load().expect("load manifest");
+        assert!(!loaded.tools.is_empty());
+
+        let err = store.refresh().expect_err("refresh requires key");
+        assert!(matches!(err, AppError::Config { .. }));
+    }
+
+    #[test]
+    fn verify_signature_and_fetch_text_error_paths() {
+        let err = verify_signature(&[1, 2, 3], b"msg", "00").expect_err("invalid key length");
+        assert!(matches!(err, AppError::Other { .. }));
+        assert!(fetch_text("://bad-url").is_err());
     }
 }

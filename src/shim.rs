@@ -10,7 +10,10 @@ use crate::manifest::{Manifest, ManifestStore, Target};
 use crate::paths::{cache_dir, shims_dir};
 use crate::resolve::resolve_tools;
 
-pub fn rebuild_shims(config: &Config, shims_override: Option<&Path>) -> Result<Vec<PathBuf>, AppError> {
+pub fn rebuild_shims(
+    config: &Config,
+    shims_override: Option<&Path>,
+) -> Result<Vec<PathBuf>, AppError> {
     let shims_root = match shims_override {
         Some(path) => path.to_path_buf(),
         None => shims_dir()?,
@@ -88,35 +91,23 @@ pub fn resolve_bin_path(
 ) -> Result<BinResolution, AppError> {
     let resolved = resolve_tools(config, cwd)?;
     if let Some(version) = resolved.tools.get(bin_name) {
-        return resolve_bin_for_tool(
-            bin_name,
-            version,
-            bin_name,
-            cache,
-            manifest,
-            target,
-            false,
-        )
-        .and_then(|resolution| resolution.ok_or_else(|| AppError::Cache {
-            message: format!(
-                "bin '{bin_name}' not found for {bin_name}@{version} ({}/{})",
-                target.platform, target.arch
-            ),
-        }));
+        return resolve_bin_for_tool(bin_name, version, bin_name, cache, manifest, target, false)
+            .and_then(|resolution| {
+                resolution.ok_or_else(|| AppError::Cache {
+                    message: format!(
+                        "bin '{bin_name}' not found for {bin_name}@{version} ({}/{})",
+                        target.platform, target.arch
+                    ),
+                })
+            });
     }
 
     let mut tools: Vec<(String, String)> = resolved.tools.into_iter().collect();
     tools.sort_by(|a, b| a.0.cmp(&b.0));
     for (tool, version) in tools {
-        if let Some(resolution) = resolve_bin_for_tool(
-            &tool,
-            &version,
-            bin_name,
-            cache,
-            manifest,
-            target,
-            true,
-        )? {
+        if let Some(resolution) =
+            resolve_bin_for_tool(&tool, &version, bin_name, cache, manifest, target, true)?
+        {
             return Ok(resolution);
         }
     }
@@ -170,9 +161,7 @@ fn resolve_bin_for_tool(
         });
     }
 
-    Ok(Some(BinResolution {
-        path,
-    }))
+    Ok(Some(BinResolution { path }))
 }
 
 fn bin_path_for_name(
@@ -234,4 +223,165 @@ fn shim_path_for(root: &Path, tool: &str) -> PathBuf {
         name.push_str(".exe");
     }
     root.join(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Global, Scope};
+
+    fn map(entries: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    fn sample_manifest() -> Manifest {
+        Manifest::parse(
+            r#"
+version = 1
+generated_at = "2026-02-11T00:00:00Z"
+
+[[tool]]
+name = "node"
+  [[tool.version]]
+  ver = "22.0.0"
+  platform = "macos"
+  arch = "arm64"
+  url = "https://example.com/node"
+  sha256 = "deadbeef"
+  bin_paths = ["bin/node", "bin/npm"]
+"#,
+        )
+        .expect("manifest")
+    }
+
+    #[test]
+    fn helper_functions_extract_expected_names_and_paths() {
+        assert_eq!(
+            bin_names_from_paths(&[String::from("a/node"), String::from("a/npm")]),
+            vec!["node".to_string(), "npm".to_string()]
+        );
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        let bin = bin_path_for_name(
+            &cache,
+            "node",
+            "22",
+            "node",
+            &[String::from("bin/node"), String::from("bin/npm")],
+        )
+        .expect("bin path");
+        assert!(bin.ends_with("node/22/bin/node"));
+        assert!(
+            bin_path_for_name(&cache, "node", "22", "pnpm", &[String::from("bin/node")]).is_none()
+        );
+
+        let shim = shim_path_for(temp.path(), "node");
+        assert!(shim.ends_with("node"));
+    }
+
+    #[test]
+    fn list_shim_names_and_resolve_bin_path_work() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "22.0.0"), ("bun", "1.0.0")]),
+            },
+            scopes: vec![Scope {
+                pattern: "*".to_string(),
+                tools: map(&[("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+        let manifest = sample_manifest();
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+
+        let names = list_shim_names(&config, &manifest, &target);
+        assert!(names.contains(&"node".to_string()));
+        assert!(names.contains(&"npm".to_string()));
+        assert!(names.contains(&"bun".to_string()));
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        let node_bin = cache.tool_bin_dir("node", "22.0.0").join("node");
+        fs::create_dir_all(node_bin.parent().expect("parent")).expect("mkdir");
+        fs::write(&node_bin, b"x").expect("write");
+
+        let resolved = resolve_bin_path(
+            &config,
+            Path::new("workspace"),
+            "node",
+            &cache,
+            &manifest,
+            &target,
+        )
+        .expect("resolve bin");
+        assert_eq!(resolved.path, node_bin);
+    }
+
+    #[test]
+    fn add_shim_creates_file_when_override_is_used() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = add_shim("node", Some(temp.path())).expect("add shim");
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn rebuild_shims_with_empty_config_returns_ok() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::default();
+        let created = rebuild_shims(&config, Some(temp.path())).expect("rebuild");
+        assert!(created.is_empty());
+    }
+
+    #[test]
+    fn resolve_bin_path_returns_cache_error_when_direct_bin_missing_in_package() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "22.0.0")]),
+            },
+            ..Default::default()
+        };
+        let manifest = Manifest::parse(
+            r#"
+version = 1
+generated_at = "2026-02-11T00:00:00Z"
+
+[[tool]]
+name = "node"
+  [[tool.version]]
+  ver = "22.0.0"
+  platform = "macos"
+  arch = "arm64"
+  url = "https://example.com/node"
+  sha256 = "deadbeef"
+  bin_paths = ["bin/npm"]
+"#,
+        )
+        .expect("manifest");
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        let result = resolve_bin_path(
+            &config,
+            Path::new("workspace"),
+            "node",
+            &cache,
+            &manifest,
+            &target,
+        );
+        let err = match result {
+            Ok(_) => panic!("expected error"),
+            Err(err) => err,
+        };
+        assert!(matches!(err, AppError::Cache { .. }));
+    }
 }

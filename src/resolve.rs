@@ -44,11 +44,7 @@ pub fn resolve_tools(config: &Config, cwd: &Path) -> Result<ResolveResult, AppEr
     Ok(ResolveResult { tools, scope })
 }
 
-pub fn resolve_tool(
-    config: &Config,
-    cwd: &Path,
-    tool: &str,
-) -> Result<Resolution, AppError> {
+pub fn resolve_tool(config: &Config, cwd: &Path, tool: &str) -> Result<Resolution, AppError> {
     let resolve = resolve_tools(config, cwd)?;
     if let Some(version) = resolve.tools.get(tool) {
         if let Some(scope) = resolve.scope {
@@ -118,4 +114,107 @@ fn scope_matches(pattern: &str, cwd: &str) -> Result<bool, AppError> {
         Some(prefix) => cwd == prefix,
         None => false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Global, Scope};
+
+    fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn resolves_from_global_when_no_scope_matches() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.11.0")]),
+            },
+            scopes: vec![Scope {
+                pattern: "workspace-*".to_string(),
+                tools: map(&[("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+
+        let resolved = resolve_tool(&config, Path::new("other-dir"), "node").unwrap();
+        assert_eq!(resolved.version, "20.11.0");
+        assert!(matches!(resolved.source, ResolutionSource::Global));
+    }
+
+    #[test]
+    fn resolves_scope_override_and_scoped_fallback() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.11.0"), ("bun", "1.1.0")]),
+            },
+            scopes: vec![Scope {
+                pattern: "*".to_string(),
+                tools: map(&[("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+
+        let scoped = resolve_tool(&config, Path::new("workspace"), "node").unwrap();
+        assert_eq!(scoped.version, "22.0.0");
+        assert!(matches!(
+            scoped.source,
+            ResolutionSource::Scope { pattern } if pattern == "*"
+        ));
+
+        let fallback = resolve_tool(&config, Path::new("workspace"), "bun").unwrap();
+        assert_eq!(fallback.version, "1.1.0");
+        assert!(matches!(
+            fallback.source,
+            ResolutionSource::ScopedFallback { pattern } if pattern == "*"
+        ));
+    }
+
+    #[test]
+    fn selects_most_specific_matching_scope() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.11.0")]),
+            },
+            scopes: vec![
+                Scope {
+                    pattern: "*".to_string(),
+                    tools: map(&[("node", "21.0.0")]),
+                },
+                Scope {
+                    pattern: "workspace*".to_string(),
+                    tools: map(&[("node", "22.0.0")]),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let resolved = resolve_tool(&config, Path::new("workspace"), "node").unwrap();
+        assert_eq!(resolved.version, "22.0.0");
+        assert!(matches!(
+            resolved.source,
+            ResolutionSource::Scope { pattern } if pattern == "workspace*"
+        ));
+    }
+
+    #[test]
+    fn returns_errors_for_invalid_glob_and_unknown_tool() {
+        let config = Config {
+            scopes: vec![Scope {
+                pattern: "[".to_string(),
+                tools: map(&[("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+        let err = resolve_tools(&config, Path::new("workspace")).expect_err("invalid glob");
+        assert!(matches!(err, AppError::Config { .. }));
+
+        let config = Config::default();
+        let err = resolve_tool(&config, Path::new("workspace"), "node").expect_err("missing");
+        assert!(matches!(err, AppError::Config { .. }));
+    }
 }

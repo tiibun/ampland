@@ -135,12 +135,7 @@ fn bin_file_name(path: &str) -> Result<String, AppError> {
         })
 }
 
-fn primary_bin_path(
-    cache: &Cache,
-    tool: &str,
-    version: &str,
-    bin_paths: &[String],
-) -> PathBuf {
+fn primary_bin_path(cache: &Cache, tool: &str, version: &str, bin_paths: &[String]) -> PathBuf {
     if let Some(bin_path) = find_bin_path(tool, bin_paths) {
         if let Ok(file_name) = bin_file_name(bin_path) {
             return cache.tool_bin_dir(tool, version).join(file_name);
@@ -166,11 +161,9 @@ fn find_bin_path<'a>(bin_name: &str, bin_paths: &'a [String]) -> Option<&'a str>
 }
 
 fn download(url: &str, dest: &Path, expected_sha256: &str) -> Result<u64, AppError> {
-    let response = ureq::get(url)
-        .call()
-        .map_err(|err| AppError::Cache {
-            message: format!("download failed for {url}: {err}"),
-        })?;
+    let response = ureq::get(url).call().map_err(|err| AppError::Cache {
+        message: format!("download failed for {url}: {err}"),
+    })?;
 
     let mut reader = response.into_reader();
     let mut file = File::create(dest)?;
@@ -253,4 +246,104 @@ fn make_executable(path: &Path) -> Result<(), AppError> {
         fs::set_permissions(path, perms)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+    use std::thread;
+
+    use crate::manifest::ResolvedPackage;
+
+    #[test]
+    fn normalizes_hex() {
+        assert_eq!(normalize_hex(" AbCd "), "abcd");
+    }
+
+    #[test]
+    fn bin_name_and_path_selection_work() {
+        assert_eq!(bin_file_name("a/b/node").expect("name"), "node");
+        assert!(bin_file_name("..").is_err());
+
+        let paths = vec!["bin/npm".to_string(), "bin/node".to_string()];
+        assert_eq!(find_bin_path("node", &paths), Some("bin/node"));
+        assert_eq!(find_bin_path("bun", &paths), None);
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        let picked = primary_bin_path(&cache, "node", "22", &paths);
+        assert!(picked.ends_with("node/22/bin/node"));
+        let fallback = primary_bin_path(
+            &cache,
+            "node",
+            "22",
+            &[String::from("nested/npm"), String::from("nested/npx")],
+        );
+        assert!(fallback.ends_with("node/22/bin/npm"));
+    }
+
+    #[test]
+    fn unpack_helpers_and_make_executable_error_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let missing = temp.path().join("missing");
+        let target = temp.path().join("out");
+        assert!(unpack_tar_gz(&missing, &target).is_err());
+        assert!(unpack_tar_xz(&missing, &target).is_err());
+        assert!(unpack_zip(&missing, &target).is_err());
+        assert!(make_executable(&missing).is_err());
+    }
+
+    #[test]
+    fn install_from_unpack_validates_missing_bins() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let unpack = temp.path().join("unpack");
+        let out = temp.path().join("bin");
+        fs::create_dir_all(&unpack).expect("mkdir");
+        fs::create_dir_all(&out).expect("mkdir");
+
+        let err = install_from_unpack(&unpack, &out, &[], "tar.gz").expect_err("missing paths");
+        assert!(matches!(err, AppError::Cache { .. }));
+
+        let err = install_from_unpack(&unpack, &out, &[String::from("bin/node")], "tar.gz")
+            .expect_err("missing source");
+        assert!(matches!(err, AppError::Cache { .. }));
+    }
+
+    #[test]
+    fn install_file_package_from_local_http_server() {
+        let payload = b"#!/bin/sh\necho ok\n".to_vec();
+        let mut hasher = Sha256::new();
+        hasher.update(&payload);
+        let sha256 = format!("{:x}", hasher.finalize());
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let payload_for_thread = payload.clone();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buf = [0u8; 1024];
+            let _ = std::io::Read::read(&mut stream, &mut buf);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                payload_for_thread.len()
+            );
+            std::io::Write::write_all(&mut stream, response.as_bytes()).expect("header");
+            std::io::Write::write_all(&mut stream, &payload_for_thread).expect("body");
+        });
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        let package = ResolvedPackage {
+            url: format!("http://{addr}/tool"),
+            sha256,
+            size: Some(payload.len() as u64),
+            format: PackageFormat::File,
+            bin_paths: vec![],
+        };
+
+        let bin = install(&cache, "toolx", "1.0.0", &package).expect("install");
+        assert!(bin.exists());
+        handle.join().expect("server join");
+    }
 }

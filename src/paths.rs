@@ -63,3 +63,40 @@ pub fn normalize_path(path: &Path) -> Result<PathBuf, AppError> {
     };
     Ok(absolute)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn returns_expected_standard_paths() {
+        assert!(config_path()
+            .expect("config path")
+            .ends_with("ampland/config.toml"));
+        assert!(cache_dir().expect("cache path").ends_with("ampland/cache"));
+        assert!(shims_dir().expect("shims path").ends_with("ampland/shims"));
+    }
+
+    #[test]
+    fn expands_tilde_variants() {
+        let base = directories::BaseDirs::new().expect("base dirs");
+        let home = base.home_dir().to_string_lossy().to_string();
+        assert_eq!(expand_tilde("plain").expect("no tilde"), "plain");
+        assert_eq!(expand_tilde("~").expect("home"), home);
+        assert_eq!(
+            expand_tilde("~/work").expect("home child"),
+            format!("{home}/work")
+        );
+        assert_eq!(expand_tilde("~user").expect("unknown user form"), "~user");
+    }
+
+    #[test]
+    fn normalizes_relative_and_absolute_paths() {
+        let absolute = Path::new("/tmp");
+        assert_eq!(normalize_path(absolute).expect("absolute"), absolute);
+
+        let rel = Path::new("src");
+        let cwd = std::env::current_dir().expect("cwd");
+        assert_eq!(normalize_path(rel).expect("relative"), cwd.join(rel));
+    }
+}

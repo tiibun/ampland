@@ -61,10 +61,7 @@ fn run() -> Result<(), AppError> {
             let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
             let mut scope_label = None;
             if global {
-                config
-                    .global
-                    .tools
-                    .insert(tool.clone(), version.clone());
+                config.global.tools.insert(tool.clone(), version.clone());
             } else {
                 let cwd = resolve_path(cli.path, path)?;
                 let pattern = normalize_scope_pattern(&cwd);
@@ -72,14 +69,15 @@ fn run() -> Result<(), AppError> {
                 scope_label = Some(pattern);
             }
             if !cache.is_installed(&tool, &version) {
-                let package = manifest
-                    .resolve(&tool, &version, &target)
-                    .ok_or_else(|| AppError::Cache {
-                        message: format!(
-                            "no installer for {tool}@{version} ({}/{})",
-                            target.platform, target.arch
-                        ),
-                    })?;
+                let package =
+                    manifest
+                        .resolve(&tool, &version, &target)
+                        .ok_or_else(|| AppError::Cache {
+                            message: format!(
+                                "no installer for {tool}@{version} ({}/{})",
+                                target.platform, target.arch
+                            ),
+                        })?;
                 let bin_path = install(&cache, &tool, &version, &package)?;
                 if !cli.quiet {
                     println!("installed {tool}@{version} -> {}", bin_path.display());
@@ -103,14 +101,15 @@ fn run() -> Result<(), AppError> {
             let target = Target::current()?;
             let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
             let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
-            let package = manifest
-                .resolve(&tool, &version, &target)
-                .ok_or_else(|| AppError::Cache {
-                    message: format!(
-                        "no installer for {tool}@{version} ({}/{})",
-                        target.platform, target.arch
-                    ),
-                })?;
+            let package =
+                manifest
+                    .resolve(&tool, &version, &target)
+                    .ok_or_else(|| AppError::Cache {
+                        message: format!(
+                            "no installer for {tool}@{version} ({}/{})",
+                            target.platform, target.arch
+                        ),
+                    })?;
             let bin_path = install(&cache, &tool, &version, &package)?;
             if !cli.quiet {
                 println!("installed {tool}@{version} -> {}", bin_path.display());
@@ -138,9 +137,7 @@ fn run() -> Result<(), AppError> {
                 let mut versions: Vec<String> = tool
                     .versions
                     .iter()
-                    .filter(|entry| {
-                        entry.platform == target.platform && entry.arch == target.arch
-                    })
+                    .filter(|entry| entry.platform == target.platform && entry.arch == target.arch)
                     .map(|entry| entry.ver.clone())
                     .collect();
                 if versions.is_empty() {
@@ -177,7 +174,10 @@ fn run() -> Result<(), AppError> {
             let keep = config.all_tool_versions();
             let removed = cache.gc(&keep)?;
             if cli.json {
-                let display: Vec<String> = removed.iter().map(|path| path.display().to_string()).collect();
+                let display: Vec<String> = removed
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect();
                 println!("{}", serde_json::to_string_pretty(&display)?);
             } else if !cli.quiet {
                 for path in removed {
@@ -247,7 +247,8 @@ fn run() -> Result<(), AppError> {
             let cwd = resolve_path(cli.path, None)?;
             let target = Target::current()?;
             let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
-            let resolution = shim::resolve_bin_path(&config, &cwd, &tool, &cache, &manifest, &target)?;
+            let resolution =
+                shim::resolve_bin_path(&config, &cwd, &tool, &cache, &manifest, &target)?;
             if !cli.quiet {
                 println!("{}", resolution.path.display());
             }
@@ -371,9 +372,7 @@ fn upsert_scope(config: &mut Config, lock: &LockFile) -> Result<(), AppError> {
 fn upsert_scope_tool(config: &mut Config, pattern: &str, tool: &str, version: &str) {
     for scope in &mut config.scopes {
         if scope.pattern == pattern {
-            scope
-                .tools
-                .insert(tool.to_string(), version.to_string());
+            scope.tools.insert(tool.to_string(), version.to_string());
             return;
         }
     }
@@ -384,4 +383,80 @@ fn upsert_scope_tool(config: &mut Config, pattern: &str, tool: &str, version: &s
         pattern: pattern.to_string(),
         tools,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Global;
+
+    fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    fn sample_manifest() -> Manifest {
+        Manifest::parse(
+            r#"
+version = 1
+generated_at = "2026-02-11T00:00:00Z"
+
+[[tool]]
+name = "node"
+  [[tool.version]]
+  ver = "22.1.0"
+  platform = "macos"
+  arch = "arm64"
+  url = "https://example.com/node"
+  sha256 = "deadbeef"
+"#,
+        )
+        .expect("manifest")
+    }
+
+    #[test]
+    fn path_and_pattern_helpers_work() {
+        assert!(contains_glob("a/*"));
+        assert!(!contains_glob("plain/path"));
+        assert_eq!(
+            normalize_scope_pattern(Path::new("/tmp/work")),
+            "/tmp/work/**"
+        );
+        assert_eq!(
+            normalize_scope_pattern(Path::new("/tmp/work/**")),
+            "/tmp/work/**"
+        );
+
+        let resolved = resolve_path(None, Some(PathBuf::from("src"))).expect("resolve path");
+        assert!(resolved.ends_with("src"));
+    }
+
+    #[test]
+    fn resolve_version_spec_and_scope_upserts_work() {
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+        let manifest = sample_manifest();
+        let version = resolve_version_spec(&manifest, "node", "22", &target).expect("version");
+        assert_eq!(version, "22.1.0");
+        assert!(resolve_version_spec(&manifest, "node", "23", &target).is_err());
+
+        let mut config = Config {
+            global: Global {
+                tools: map(&[("node", "20")]),
+            },
+            ..Default::default()
+        };
+        let lock = LockFile::from_path_and_tools(Path::new("/tmp/work"), map(&[("node", "22")]));
+        upsert_scope(&mut config, &lock).expect("upsert scope");
+        assert_eq!(config.scopes.len(), 1);
+        upsert_scope_tool(&mut config, "/tmp/work", "bun", "1.0.0");
+        assert_eq!(
+            config.scopes[0].tools.get("bun"),
+            Some(&"1.0.0".to_string())
+        );
+    }
 }

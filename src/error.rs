@@ -58,3 +58,58 @@ impl From<serde_json::Error> for AppError {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_codes_match_error_kind() {
+        assert_eq!(
+            AppError::ToolNotInstalled { tool: "x".into() }.exit_code(),
+            3
+        );
+        assert_eq!(
+            AppError::Config {
+                message: "x".into()
+            }
+            .exit_code(),
+            4
+        );
+        assert_eq!(
+            AppError::Cache {
+                message: "x".into()
+            }
+            .exit_code(),
+            5
+        );
+        assert_eq!(
+            AppError::Io {
+                message: "x".into()
+            }
+            .exit_code(),
+            5
+        );
+        assert_eq!(
+            AppError::Other {
+                message: "x".into()
+            }
+            .exit_code(),
+            1
+        );
+    }
+
+    #[test]
+    fn from_conversions_map_to_expected_variant() {
+        let io_err = std::io::Error::other("io");
+        assert!(matches!(AppError::from(io_err), AppError::Io { .. }));
+
+        let de_err = toml::from_str::<toml::Value>("=").expect_err("invalid toml");
+        assert!(matches!(AppError::from(de_err), AppError::Config { .. }));
+
+        let ser_err = toml::to_string_pretty(&f64::NAN).expect_err("nan is invalid in toml");
+        assert!(matches!(AppError::from(ser_err), AppError::Config { .. }));
+
+        let json_err = serde_json::from_str::<serde_json::Value>("{").expect_err("invalid json");
+        assert!(matches!(AppError::from(json_err), AppError::Config { .. }));
+    }
+}
