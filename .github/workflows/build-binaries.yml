@@ -2,8 +2,6 @@ name: build-binaries
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
   pull_request:
@@ -13,7 +11,19 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare
+        uses: ./.github/actions/prepare-rust
+
+      - name: Test
+        run: cargo test
+
   build:
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:
@@ -31,14 +41,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+      - name: Prepare
+        uses: ./.github/actions/prepare-rust
 
       - name: Build (release)
         run: cargo build --release
