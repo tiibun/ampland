@@ -14,6 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
+use semver::Version;
 
 use crate::cache::Cache;
 use crate::cli::{Cli, Command, ShimCommand};
@@ -93,14 +94,13 @@ fn run() -> Result<(), AppError> {
             }
         }
         Command::Install { tool, version } => {
-            let cwd = resolve_path(cli.path, None)?;
-            let version = match version {
-                Some(version) => version,
-                None => resolve_tool(&config, &cwd, &tool)?.version,
-            };
+            let (tool, version) = normalize_tool_version_arg(tool, version);
             let target = Target::current()?;
             let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
-            let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
+            let version = match version {
+                Some(version) => resolve_version_spec(&manifest, &tool, &version, &target)?,
+                None => resolve_latest_version(&manifest, &tool, &target)?,
+            };
             let package =
                 manifest
                     .resolve(&tool, &version, &target)
@@ -349,6 +349,60 @@ fn resolve_version_spec(
                 target.platform, target.arch
             ),
         })
+}
+
+fn normalize_tool_version_arg(tool: String, version: Option<String>) -> (String, Option<String>) {
+    if version.is_some() {
+        return (tool, version);
+    }
+
+    if let Some((name, ver)) = tool.rsplit_once('@') {
+        if !name.is_empty() && !ver.is_empty() {
+            return (name.to_string(), Some(ver.to_string()));
+        }
+    }
+
+    (tool, None)
+}
+
+fn resolve_latest_version(
+    manifest: &Manifest,
+    tool: &str,
+    target: &Target,
+) -> Result<String, AppError> {
+    let tool_entry = manifest.tools.iter().find(|entry| entry.name == tool);
+    let Some(tool_entry) = tool_entry else {
+        return Err(AppError::Cache {
+            message: format!(
+                "no installer for {tool}@latest ({}/{})",
+                target.platform, target.arch
+            ),
+        });
+    };
+
+    let mut best: Option<(Version, String)> = None;
+    for entry in tool_entry
+        .versions
+        .iter()
+        .filter(|entry| entry.platform == target.platform && entry.arch == target.arch)
+    {
+        let parsed = match Version::parse(entry.ver.trim_start_matches('v')) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        match &best {
+            Some((best_version, _)) if &parsed <= best_version => {}
+            _ => best = Some((parsed, entry.ver.clone())),
+        }
+    }
+
+    best.map(|(_, ver)| ver).ok_or_else(|| AppError::Cache {
+        message: format!(
+            "no installer for {tool}@latest ({}/{})",
+            target.platform, target.arch
+        ),
+    })
 }
 
 fn upsert_scope(config: &mut Config, lock: &LockFile) -> Result<(), AppError> {

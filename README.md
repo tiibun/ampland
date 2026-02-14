@@ -56,6 +56,11 @@ Common commands:
 - `ampland search [query]`
 - `ampland doctor`
 
+If you omit the version in `ampland install <tool>`, ampland installs the
+latest version from the manifest for the current platform and architecture.
+
+You can also pass a combined spec like `ampland install node@24`.
+
 `ampland doctor` also reports whether the shims directory is early in `PATH`.
 
 Concepts:
