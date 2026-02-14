@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -16,6 +16,7 @@ const DEFAULT_MANIFEST_URL: &str =
     "https://github.com/tiibun/ampland/releases/latest/download/installers.toml";
 const DEFAULT_PUBLIC_KEY_HEX: &str = "";
 const DEFAULT_TTL_HOURS: u64 = 24;
+const MAX_TEXT_BYTES: usize = 20 * 1024 * 1024;
 const EMBEDDED_TOOL_MANIFESTS: &[&str] = &[
     include_str!("../assets/manifest/node.toml"),
     include_str!("../assets/manifest/python.toml"),
@@ -480,8 +481,33 @@ fn fetch_text(url: &str) -> Result<String, AppError> {
     let response = ureq::get(url).call().map_err(|err| AppError::Other {
         message: format!("failed to fetch {url}: {err}"),
     })?;
-    response.into_string().map_err(|err| AppError::Other {
-        message: format!("failed to read {url}: {err}"),
+    read_response_text(response, url)
+}
+
+fn read_response_text(response: ureq::Response, url: &str) -> Result<String, AppError> {
+    let mut reader = response.into_reader();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut total = 0usize;
+
+    loop {
+        let read = reader.read(&mut chunk).map_err(|err| AppError::Other {
+            message: format!("failed to read {url}: {err}"),
+        })?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read);
+        if total > MAX_TEXT_BYTES {
+            return Err(AppError::Other {
+                message: format!("response too big for {url} (>{} bytes)", MAX_TEXT_BYTES),
+            });
+        }
+        buf.extend_from_slice(&chunk[..read]);
+    }
+
+    String::from_utf8(buf).map_err(|err| AppError::Other {
+        message: format!("failed to decode {url}: {err}"),
     })
 }
 

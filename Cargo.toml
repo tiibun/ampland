@@ -29,4 +29,4 @@ path = "src/bin/manifest_merge.rs"
 
 [[bin]]
 name = "manifest-generate"
-path = "src/bin/manifest_generate.rs"
+path = "src/bin/manifest_generate/main.rs"

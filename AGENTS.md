@@ -41,3 +41,6 @@ This project is implemented in Rust.
 
 ## Test
 - `cargo test`
+
+## Coverage
+- `cargo llvm-cov --lcov --output-path lcov.info`
