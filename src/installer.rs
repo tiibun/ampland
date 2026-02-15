@@ -20,12 +20,12 @@ pub fn install(
     package: &ResolvedPackage,
 ) -> Result<PathBuf, AppError> {
     cache.with_lock(|| {
-        let bin_dir = cache.tool_bin_dir(tool, version);
         let install_path = primary_bin_path(cache, tool, version, &package.bin_paths);
         if install_path.exists() {
             return Ok(install_path);
         }
 
+        let version_dir = cache.tool_version_dir(tool, version);
         let tmp_dir = TempDir::new_in(cache.root())?;
         let archive_path = tmp_dir.path().join("archive");
         let size = download(&package.url, &archive_path, &package.sha256)?;
@@ -37,10 +37,12 @@ pub fn install(
             }
         }
 
-        fs::create_dir_all(&bin_dir)?;
+        fs::create_dir_all(&version_dir)?;
 
         match package.format {
             PackageFormat::File => {
+                let bin_dir = cache.tool_bin_dir(tool, version);
+                fs::create_dir_all(&bin_dir)?;
                 if package.bin_paths.is_empty() {
                     fs::copy(&archive_path, &install_path)?;
                     make_executable(&install_path)?;
@@ -55,18 +57,20 @@ pub fn install(
                 }
             }
             PackageFormat::TarGz => {
-                let unpack_dir = tmp_dir.path().join("unpacked");
-                fs::create_dir_all(&unpack_dir)?;
-                unpack_tar_gz(&archive_path, &unpack_dir)?;
-                install_from_unpack(&unpack_dir, &bin_dir, &package.bin_paths, "tar.gz")?;
+                let bin_dir = cache.tool_bin_dir(tool, version);
+                unpack_tar_gz(&archive_path, &version_dir)?;
+                fs::create_dir_all(&bin_dir)?;
+                install_from_unpack(&version_dir, &bin_dir, &package.bin_paths, "tar.gz")?;
             }
             PackageFormat::TarXz => {
-                let unpack_dir = tmp_dir.path().join("unpacked");
-                fs::create_dir_all(&unpack_dir)?;
-                unpack_tar_xz(&archive_path, &unpack_dir)?;
-                install_from_unpack(&unpack_dir, &bin_dir, &package.bin_paths, "tar.xz")?;
+                let bin_dir = cache.tool_bin_dir(tool, version);
+                unpack_tar_xz(&archive_path, &version_dir)?;
+                fs::create_dir_all(&bin_dir)?;
+                install_from_unpack(&version_dir, &bin_dir, &package.bin_paths, "tar.xz")?;
             }
             PackageFormat::Zip => {
+                let bin_dir = cache.tool_bin_dir(tool, version);
+                fs::create_dir_all(&bin_dir)?;
                 unpack_zip(&archive_path, &bin_dir)?;
                 if package.bin_paths.is_empty() {
                     if !install_path.exists() {

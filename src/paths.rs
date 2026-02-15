@@ -16,26 +16,16 @@ pub fn cache_dir() -> Result<PathBuf, AppError> {
     let base = BaseDirs::new().ok_or_else(|| AppError::Cache {
         message: "unable to determine home directory".to_string(),
     })?;
-    if cfg!(windows) {
-        let local = base.data_local_dir();
-        Ok(local.join("ampland").join("cache"))
-    } else {
-        let home = base.home_dir();
-        Ok(home.join(".local").join("ampland").join("cache"))
-    }
+    let local = base.data_local_dir();
+    Ok(local.join("ampland").join("cache"))
 }
 
 pub fn shims_dir() -> Result<PathBuf, AppError> {
     let base = BaseDirs::new().ok_or_else(|| AppError::Cache {
         message: "unable to determine home directory".to_string(),
     })?;
-    if cfg!(windows) {
-        let local = base.data_local_dir();
-        Ok(local.join("ampland").join("shims"))
-    } else {
-        let home = base.home_dir();
-        Ok(home.join(".local").join("ampland").join("shims"))
-    }
+    let local = base.data_local_dir();
+    Ok(local.join("ampland").join("shims"))
 }
 
 pub fn expand_tilde(path: &str) -> Result<String, AppError> {

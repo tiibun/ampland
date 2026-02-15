@@ -28,7 +28,7 @@ pub enum Command {
     #[command(about = "Set the active tool version")]
     Use {
         tool: String,
-        version: String,
+        version: Option<String>,
         #[arg(short, long)]
         global: bool,
         #[arg(long)]
@@ -40,7 +40,7 @@ pub enum Command {
         version: Option<String>,
     },
     #[command(about = "Uninstall a specific version")]
-    Uninstall { tool: String, version: String },
+    Uninstall { tool: String, version: Option<String> },
     #[command(about = "Search tools by name")]
     Search { query: Option<String> },
     #[command(about = "List installed tools")]
@@ -72,6 +72,8 @@ pub enum Command {
     Explain { tool: String },
     #[command(about = "Update the manifest")]
     UpdateManifest,
+    #[command(about = "Print shell code to add shims to PATH")]
+    Activate,
     #[command(about = "Manage shims")]
     Shim {
         #[command(subcommand)]

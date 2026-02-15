@@ -22,24 +22,54 @@ cargo run -- <args>
 
 ## Quick start
 
-Make sure the shims directory is on `PATH` before running commands.
+Initialize PATH via `ampland activate` before running commands.
+
+To make it permanent, add it to your shell rc file or the Windows user PATH.
 
 macOS and Linux (bash/zsh):
 
 ```
-export PATH="$HOME/.local/ampland/shims:$PATH"
+eval "$(ampland activate)"
+```
+
+Add to `~/.bashrc` or `~/.zshrc`:
+
+```sh
+echo 'eval "$(ampland activate)"' >> ~/.bashrc
 ```
 
 macOS and Linux (fish):
 
 ```
-set -gx PATH $HOME/.local/ampland/shims $PATH
+eval (ampland activate)
+```
+
+Add to `~/.config/fish/config.fish`:
+
+```fish
+echo 'eval (ampland activate)' >> ~/.config/fish/config.fish
 ```
 
 Windows (PowerShell):
 
 ```
 $env:Path = "$env:LOCALAPPDATA\ampland\shims;$env:Path"
+```
+
+Add to your PowerShell profile:
+
+```powershell
+Add-Content $PROFILE '$env:Path = "$env:LOCALAPPDATA\ampland\shims;$env:Path"'
+```
+
+Or add it to the Windows user PATH (persistent):
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+	"PATH",
+	"$env:LOCALAPPDATA\ampland\shims;" + [Environment]::GetEnvironmentVariable("PATH", "User"),
+	"User"
+)
 ```
 
 ```

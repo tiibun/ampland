@@ -47,7 +47,7 @@ fn run() -> Result<(), AppError> {
     let cli = Cli::parse();
     let (mut config, config_path) = Config::load(cli.config.as_deref())?;
     let cache_root = cli.cache_dir.unwrap_or(cache_dir()?);
-    let _shims_root = cli.shims_dir.clone().unwrap_or(shims_dir()?);
+    let shims_root = cli.shims_dir.clone().unwrap_or(shims_dir()?);
     let cache = Cache::new(cache_root.clone());
 
     match cli.command {
@@ -57,6 +57,13 @@ fn run() -> Result<(), AppError> {
             global,
             path,
         } => {
+            let (tool, version) = normalize_tool_version_arg(tool, version);
+            let Some(version) = version else {
+                return Err(AppError::Config {
+                    message: "use requires a version (e.g. ampland use node 22 or node@22)"
+                        .to_string(),
+                });
+            };
             let target = Target::current()?;
             let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
             let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
@@ -85,6 +92,7 @@ fn run() -> Result<(), AppError> {
                 }
             }
             config.save(&config_path)?;
+            shim::rebuild_shims(&config, cli.shims_dir.as_deref())?;
             if !cli.quiet {
                 if global {
                     println!("set {tool}@{version} for global");
@@ -116,6 +124,13 @@ fn run() -> Result<(), AppError> {
             }
         }
         Command::Uninstall { tool, version } => {
+            let (tool, version) = normalize_tool_version_arg(tool, version);
+            let Some(version) = version else {
+                return Err(AppError::Config {
+                    message: "uninstall requires a version (e.g. ampland uninstall node 22 or node@22)"
+                        .to_string(),
+                });
+            };
             cache.uninstall(&tool, &version)?;
             if !cli.quiet {
                 println!("removed {tool}@{version}");
@@ -292,6 +307,27 @@ fn run() -> Result<(), AppError> {
                 println!("manifest updated (version {})", manifest.version);
             }
         }
+        Command::Activate => {
+            if !cli.quiet {
+                let shell = detect_shell_kind();
+                let shims_value = shims_root.to_string_lossy();
+                match shell {
+                    ShellKind::Posix => {
+                        let value = escape_for_double_quotes(&shims_value);
+                        println!("export PATH=\"{}:$PATH\"", value);
+                    }
+                    ShellKind::PowerShell => {
+                        let value = escape_for_powershell_double_quotes(&shims_value);
+                        let separator = if cfg!(windows) { ";" } else { ":" };
+                        println!("$env:PATH = \"{}{}$env:PATH\"", value, separator);
+                    }
+                    ShellKind::Cmd => {
+                        let value = escape_for_cmd_set(&shims_value);
+                        println!("set \"PATH={}{}%PATH%\"", value, ";");
+                    }
+                }
+            }
+        }
         Command::Shim { command } => match command {
             ShimCommand::Rebuild => {
                 let created = shim::rebuild_shims(&config, cli.shims_dir.as_deref())?;
@@ -316,6 +352,54 @@ fn run() -> Result<(), AppError> {
 fn resolve_path(global: Option<PathBuf>, command: Option<PathBuf>) -> Result<PathBuf, AppError> {
     let raw = command.or(global).unwrap_or(std::env::current_dir()?);
     normalize_path(&raw)
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum ShellKind {
+    Posix,
+    PowerShell,
+    Cmd,
+}
+
+fn detect_shell_kind() -> ShellKind {
+    if cfg!(windows) {
+        if std::env::var("PROMPT").is_ok() {
+            return ShellKind::Cmd;
+        }
+        if std::env::var("POWERSHELL_DISTRIBUTION_CHANNEL").is_ok()
+            || std::env::var("PSExecutionPolicyPreference").is_ok()
+        {
+            return ShellKind::PowerShell;
+        }
+        return ShellKind::PowerShell;
+    }
+
+    if let Ok(shell) = std::env::var("SHELL") {
+        let shell = shell.to_ascii_lowercase();
+        if shell.contains("pwsh") || shell.contains("powershell") {
+            return ShellKind::PowerShell;
+        }
+    }
+    ShellKind::Posix
+}
+
+fn escape_for_double_quotes(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`")
+}
+
+fn escape_for_powershell_double_quotes(value: &str) -> String {
+    value
+        .replace('`', "``")
+        .replace('"', "`\"")
+        .replace('$', "`$")
+}
+
+fn escape_for_cmd_set(value: &str) -> String {
+    value.replace('"', "^\"")
 }
 
 fn normalize_scope_pattern(path: &Path) -> String {
