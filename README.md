@@ -72,10 +72,11 @@ Or add it to the Windows user PATH (persistent):
 )
 ```
 
+Example workflow to set a tool for the current directory and verify the resolved executable:
+
 ```
-ampland install node 22.1.0
 ampland use node 22.1.0
-ampland which node
+node --version
 ```
 
 Common commands:
