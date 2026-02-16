@@ -40,7 +40,10 @@ pub enum Command {
         version: Option<String>,
     },
     #[command(about = "Uninstall a specific version")]
-    Uninstall { tool: String, version: Option<String> },
+    Uninstall {
+        tool: String,
+        version: Option<String>,
+    },
     #[command(about = "Search tools by name")]
     Search { query: Option<String> },
     #[command(about = "List installed tools")]

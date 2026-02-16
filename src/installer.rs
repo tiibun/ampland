@@ -59,43 +59,23 @@ pub fn install(
             PackageFormat::TarGz => {
                 let bin_dir = cache.tool_bin_dir(tool, version);
                 unpack_tar_gz(&archive_path, &version_dir)?;
+                let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
                 fs::create_dir_all(&bin_dir)?;
-                install_from_unpack(&version_dir, &bin_dir, &package.bin_paths, "tar.gz")?;
+                install_from_unpack(&version_dir, &bin_dir, &bin_paths, "tar.gz")?;
             }
             PackageFormat::TarXz => {
                 let bin_dir = cache.tool_bin_dir(tool, version);
                 unpack_tar_xz(&archive_path, &version_dir)?;
+                let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
                 fs::create_dir_all(&bin_dir)?;
-                install_from_unpack(&version_dir, &bin_dir, &package.bin_paths, "tar.xz")?;
+                install_from_unpack(&version_dir, &bin_dir, &bin_paths, "tar.xz")?;
             }
             PackageFormat::Zip => {
                 let bin_dir = cache.tool_bin_dir(tool, version);
+                unpack_zip(&archive_path, &version_dir)?;
+                let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
                 fs::create_dir_all(&bin_dir)?;
-                unpack_zip(&archive_path, &bin_dir)?;
-                if package.bin_paths.is_empty() {
-                    if !install_path.exists() {
-                        return Err(AppError::Cache {
-                            message: format!(
-                                "bin_path not found in archive: {}",
-                                install_path.display()
-                            ),
-                        });
-                    }
-                    make_executable(&install_path)?;
-                } else {
-                    for bin_path in package.bin_paths.iter().cloned() {
-                        let expected = bin_dir.join(&bin_path);
-                        if !expected.exists() {
-                            return Err(AppError::Cache {
-                                message: format!(
-                                    "bin_path not found in archive: {}",
-                                    expected.display()
-                                ),
-                            });
-                        }
-                        make_executable(&expected)?;
-                    }
-                }
+                install_from_unpack(&version_dir, &bin_dir, &bin_paths, "zip")?;
             }
         }
         Ok(install_path)
@@ -122,11 +102,48 @@ fn install_from_unpack(
             });
         }
         let target = bin_dir.join(bin_file_name(&bin_path)?);
-        fs::copy(&source, &target)?;
+        if source != target {
+            fs::copy(&source, &target)?;
+        }
         make_executable(&target)?;
     }
 
     Ok(())
+}
+
+fn normalize_unpacked_layout(
+    unpack_dir: &Path,
+    bin_paths: &[String],
+) -> Result<Vec<String>, AppError> {
+    let mut roots = Vec::new();
+    for entry in fs::read_dir(unpack_dir)? {
+        roots.push(entry?);
+    }
+    if roots.len() != 1 {
+        return Ok(bin_paths.to_vec());
+    }
+    let root = &roots[0];
+    if !root.path().is_dir() {
+        return Ok(bin_paths.to_vec());
+    }
+    let root_name = root.file_name().to_string_lossy().to_string();
+    let prefix = format!("{root_name}/");
+    if !bin_paths.iter().all(|path| path.starts_with(&prefix)) {
+        return Ok(bin_paths.to_vec());
+    }
+
+    let root_path = root.path();
+    for entry in fs::read_dir(&root_path)? {
+        let entry = entry?;
+        let target = unpack_dir.join(entry.file_name());
+        fs::rename(entry.path(), target)?;
+    }
+    fs::remove_dir(root_path)?;
+
+    Ok(bin_paths
+        .iter()
+        .map(|path| path.trim_start_matches(&prefix).to_string())
+        .collect())
 }
 
 fn bin_file_name(path: &str) -> Result<String, AppError> {
@@ -312,6 +329,42 @@ mod tests {
         let err = install_from_unpack(&unpack, &out, &[String::from("bin/node")], "tar.gz")
             .expect_err("missing source");
         assert!(matches!(err, AppError::Cache { .. }));
+    }
+
+    #[test]
+    fn install_from_unpack_handles_same_source_and_target() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let unpack = temp.path().join("unpack");
+        let bin = unpack.join("bin");
+        fs::create_dir_all(&bin).expect("mkdir");
+        let node_path = bin.join("node");
+        fs::write(&node_path, b"node-binary").expect("write");
+
+        install_from_unpack(&unpack, &bin, &[String::from("bin/node")], "tar.gz")
+            .expect("install from unpack");
+
+        let bytes = fs::read(&node_path).expect("read");
+        assert_eq!(bytes, b"node-binary");
+    }
+
+    #[test]
+    fn normalize_unpacked_layout_flattens_single_root_dir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let unpack = temp.path().join("unpack");
+        let root = unpack.join("node-v24.3.1-darwin-arm64");
+        let source_bin = root.join("bin");
+        fs::create_dir_all(&source_bin).expect("mkdir");
+        fs::write(source_bin.join("node"), b"bin").expect("write");
+
+        let normalized = normalize_unpacked_layout(
+            &unpack,
+            &[String::from("node-v24.3.1-darwin-arm64/bin/node")],
+        )
+        .expect("normalize");
+
+        assert_eq!(normalized, vec![String::from("bin/node")]);
+        assert!(unpack.join("bin/node").exists());
+        assert!(!root.exists());
     }
 
     #[test]

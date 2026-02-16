@@ -77,27 +77,63 @@ pub fn run_as_shim(tool: &str) -> Result<(), AppError> {
     let cache = Cache::new(cache_dir()?);
     let target = Target::current()?;
     let manifest = ManifestStore::new(cache.root(), &config.manifest).load()?;
+    sync_runtime_shims(&config, &cwd, &cache, None)?;
     let resolution = resolve_bin_path(&config, &cwd, tool, &cache, &manifest, &target)?;
 
     let args: Vec<String> = env::args().skip(1).collect();
-    exec_tool(&resolution.path, &args)
+    let exit_code = exec_tool(&resolution.path, &args)?;
+    if exit_code == 0 {
+        sync_runtime_shims(&config, &cwd, &cache, None)?;
+    }
+    std::process::exit(exit_code);
 }
 
-fn exec_tool(path: &Path, args: &[String]) -> Result<(), AppError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let err = Command::new(path).args(args).exec();
-        Err(AppError::Other {
-            message: format!("failed to exec {path:?}: {err}"),
-        })
+fn exec_tool(path: &Path, args: &[String]) -> Result<i32, AppError> {
+    let status = Command::new(path).args(args).status()?;
+    Ok(status.code().unwrap_or(1))
+}
+
+fn sync_runtime_shims(
+    config: &Config,
+    cwd: &Path,
+    cache: &Cache,
+    shims_override: Option<&Path>,
+) -> Result<Vec<PathBuf>, AppError> {
+    let shims_root = match shims_override {
+        Some(path) => path.to_path_buf(),
+        None => shims_dir()?,
+    };
+    fs::create_dir_all(&shims_root)?;
+    let resolved = resolve_tools(config, cwd)?;
+    let mut names = std::collections::BTreeSet::new();
+    for (tool, version) in resolved.tools {
+        let bin_dir = cache.tool_bin_dir(&tool, &version);
+        if !bin_dir.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(&bin_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
+                names.insert(stem.to_string());
+            }
+        }
     }
 
-    #[cfg(windows)]
-    {
-        let status = Command::new(path).args(args).status()?;
-        std::process::exit(status.code().unwrap_or(1));
+    let mut created = Vec::new();
+    let exe = env::current_exe()?;
+    for name in names {
+        let shim_path = shim_path_for(&shims_root, &name);
+        if shim_path.exists() {
+            continue;
+        }
+        fs::copy(&exe, &shim_path)?;
+        created.push(shim_path);
     }
+    Ok(created)
 }
 
 pub struct BinResolution {
@@ -373,6 +409,30 @@ name = "node"
         let created = rebuild_shims(&config, Some(temp.path())).expect("rebuild");
         assert!(created.is_empty());
         assert!(!stale_path.exists());
+    }
+
+    #[test]
+    fn sync_runtime_shims_creates_missing_shims_from_bin_dir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().join("cache"));
+        let shims = temp.path().join("shims");
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "24.3.1")]),
+            },
+            ..Default::default()
+        };
+        let bin_dir = cache.tool_bin_dir("node", "24.3.1");
+        fs::create_dir_all(&bin_dir).expect("mkdir");
+        fs::write(bin_dir.join("node"), b"node").expect("write node");
+        fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
+
+        let created = sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
+            .expect("sync shims");
+
+        assert_eq!(created.len(), 2);
+        assert!(shim_path_for(&shims, "node").exists());
+        assert!(shim_path_for(&shims, "pnpm").exists());
     }
 
     #[test]

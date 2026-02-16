@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use semver::Version;
 use serde::Deserialize;
 
-use crate::common::{default_targets, fetch_text, TargetSpec, ToolEntry, ToolManifest, ToolVersion};
+use crate::common::{
+    default_targets, fetch_text, TargetSpec, ToolEntry, ToolManifest, ToolVersion,
+};
 
 const NODE_MAJORS: &[u64] = &[25, 24, 22, 20, 18];
 
