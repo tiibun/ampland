@@ -127,11 +127,16 @@ fn run() -> Result<(), AppError> {
             let (tool, version) = normalize_tool_version_arg(tool, version);
             let Some(version) = version else {
                 return Err(AppError::Config {
-                    message: "uninstall requires a version (e.g. ampland uninstall node 22 or node@22)"
-                        .to_string(),
+                    message:
+                        "uninstall requires a version (e.g. ampland uninstall node 22 or node@22)"
+                            .to_string(),
                 });
             };
             cache.uninstall(&tool, &version)?;
+            let tool_still_configured = config.all_tool_versions().contains_key(&tool);
+            if !tool_still_configured {
+                shim::rebuild_shims(&config, cli.shims_dir.as_deref())?;
+            }
             if !cli.quiet {
                 println!("removed {tool}@{version}");
             }

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,6 +25,28 @@ pub fn rebuild_shims(
     let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
     let target = Target::current()?;
     let shim_names = list_shim_names(config, &manifest, &target);
+    let expected_names: HashSet<String> = shim_names
+        .iter()
+        .map(|name| {
+            if cfg!(windows) {
+                format!("{name}.exe")
+            } else {
+                name.clone()
+            }
+        })
+        .collect();
+
+    for entry in fs::read_dir(&shims_root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !expected_names.contains(&name) {
+            fs::remove_file(path)?;
+        }
+    }
 
     let mut created = Vec::new();
     let exe = env::current_exe()?;
@@ -337,6 +360,19 @@ name = "node"
         let config = Config::default();
         let created = rebuild_shims(&config, Some(temp.path())).expect("rebuild");
         assert!(created.is_empty());
+    }
+
+    #[test]
+    fn rebuild_shims_prunes_stale_files_with_empty_config() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let stale_name = if cfg!(windows) { "node.exe" } else { "node" };
+        let stale_path = temp.path().join(stale_name);
+        fs::write(&stale_path, b"shim").expect("write stale shim");
+        let config = Config::default();
+
+        let created = rebuild_shims(&config, Some(temp.path())).expect("rebuild");
+        assert!(created.is_empty());
+        assert!(!stale_path.exists());
     }
 
     #[test]
