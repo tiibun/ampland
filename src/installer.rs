@@ -94,14 +94,14 @@ fn install_from_unpack(
         });
     }
 
-    for bin_path in bin_paths.iter().cloned() {
-        let source = unpack_dir.join(&bin_path);
+    for bin_path in bin_paths {
+        let source = unpack_dir.join(bin_path);
         if !source.exists() {
             return Err(AppError::Cache {
                 message: format!("bin_path not found in archive: {}", source.display()),
             });
         }
-        let target = bin_dir.join(bin_file_name(&bin_path)?);
+        let target = bin_dir.join(bin_file_name(bin_path)?);
         if source != target {
             fs::copy(&source, &target)?;
         }

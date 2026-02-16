@@ -63,7 +63,7 @@ fn detect_conflicts(shims_root: &Path, shim_names: &[String]) -> Vec<PathBuf> {
     let entries: Vec<PathBuf> = env::split_paths(&path_var).collect();
     for tool in shim_names {
         for entry in &entries {
-            let candidate = tool_in_dir(entry, &tool);
+            let candidate = tool_in_dir(entry, tool);
             if candidate.exists() {
                 if entry != shims_root {
                     conflicts.push(candidate);

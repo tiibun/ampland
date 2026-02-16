@@ -247,12 +247,7 @@ impl ManifestStore {
     }
 
     pub fn refresh(&self) -> Result<Manifest, AppError> {
-        let url = self
-            .config
-            .url
-            .as_ref()
-            .map(String::as_str)
-            .unwrap_or(DEFAULT_MANIFEST_URL);
+        let url = self.config.url.as_deref().unwrap_or(DEFAULT_MANIFEST_URL);
         let public_key = self.resolve_public_key()?.ok_or_else(|| AppError::Config {
             message: "manifest.public_key is required to update".to_string(),
         })?;
@@ -531,7 +526,7 @@ fn verify_signature(public_key: &[u8], message: &[u8], sig_hex: &str) -> Result<
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, AppError> {
     let value = value.trim();
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err(AppError::Other {
             message: "invalid hex length".to_string(),
         });

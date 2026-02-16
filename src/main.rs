@@ -328,7 +328,7 @@ fn run() -> Result<(), AppError> {
                     }
                     ShellKind::Cmd => {
                         let value = escape_for_cmd_set(&shims_value);
-                        println!("set \"PATH={}{}%PATH%\"", value, ";");
+                        println!("set \"PATH={};%PATH%\"", value);
                     }
                 }
             }
@@ -409,13 +409,11 @@ fn escape_for_cmd_set(value: &str) -> String {
 
 fn normalize_scope_pattern(path: &Path) -> String {
     let mut pattern = path.to_string_lossy().to_string();
-    if !contains_glob(&pattern) {
-        if !pattern.ends_with("/**") {
-            if !pattern.ends_with('/') {
-                pattern.push('/');
-            }
-            pattern.push_str("**");
+    if !contains_glob(&pattern) && !pattern.ends_with("/**") {
+        if !pattern.ends_with('/') {
+            pattern.push('/');
         }
+        pattern.push_str("**");
     }
     pattern
 }

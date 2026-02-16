@@ -145,7 +145,7 @@ fn sync_runtime_shims(
     let mut created = Vec::new();
     let exe = env::current_exe()?;
     for name in &names {
-        let shim_path = shim_path_for(&shims_root, &name);
+        let shim_path = shim_path_for(&shims_root, name);
         if shim_path.exists() {
             continue;
         }
