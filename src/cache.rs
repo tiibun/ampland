@@ -51,9 +51,12 @@ impl Cache {
 
     pub fn uninstall(&self, tool: &str, version: &str) -> Result<(), AppError> {
         let dir = self.tool_version_dir(tool, version);
-        if dir.exists() {
-            fs::remove_dir_all(dir)?;
+        if !dir.exists() {
+            return Err(AppError::Cache {
+                message: format!("{tool}@{version} is not installed"),
+            });
         }
+        fs::remove_dir_all(dir)?;
         Ok(())
     }
 
@@ -168,5 +171,13 @@ mod tests {
         assert_eq!(removed.len(), 1);
         assert!(cache.tool_version_dir("node", "22").exists());
         assert!(!cache.tool_version_dir("node", "20").exists());
+    }
+
+    #[test]
+    fn uninstall_missing_version_returns_error() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        let err = cache.uninstall("node", "99").expect_err("missing install should fail");
+        assert!(matches!(err, AppError::Cache { .. }));
     }
 }

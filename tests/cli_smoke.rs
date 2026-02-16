@@ -18,3 +18,23 @@ fn list_command_runs_successfully() {
 
     assert!(status.success());
 }
+
+#[test]
+fn uninstall_missing_version_fails() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("uninstall")
+        .arg("node")
+        .arg("22")
+        .status()
+        .expect("run ampland");
+
+    assert!(!status.success());
+}
