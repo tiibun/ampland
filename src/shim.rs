@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,6 +10,8 @@ use crate::error::AppError;
 use crate::manifest::{Manifest, ManifestStore, Target};
 use crate::paths::{cache_dir, shims_dir};
 use crate::resolve::resolve_tools;
+
+const MANAGED_SHIMS_FILE: &str = ".ampland-managed-shims";
 
 pub fn rebuild_shims(
     config: &Config,
@@ -43,6 +45,9 @@ pub fn rebuild_shims(
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
+        if name == MANAGED_SHIMS_FILE {
+            continue;
+        }
         if !expected_names.contains(&name) {
             fs::remove_file(path)?;
         }
@@ -105,7 +110,7 @@ fn sync_runtime_shims(
     };
     fs::create_dir_all(&shims_root)?;
     let resolved = resolve_tools(config, cwd)?;
-    let mut names = std::collections::BTreeSet::new();
+    let mut names = BTreeSet::new();
     for (tool, version) in resolved.tools {
         let bin_dir = cache.tool_bin_dir(&tool, &version);
         if !bin_dir.exists() {
@@ -123,9 +128,23 @@ fn sync_runtime_shims(
         }
     }
 
+    let mut managed = load_managed_shims(&shims_root)?;
+    for stale in managed
+        .iter()
+        .filter(|name| !names.contains(*name))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        let path = shim_path_for(&shims_root, &stale);
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        managed.remove(&stale);
+    }
+
     let mut created = Vec::new();
     let exe = env::current_exe()?;
-    for name in names {
+    for name in &names {
         let shim_path = shim_path_for(&shims_root, &name);
         if shim_path.exists() {
             continue;
@@ -133,7 +152,41 @@ fn sync_runtime_shims(
         fs::copy(&exe, &shim_path)?;
         created.push(shim_path);
     }
+    managed = names;
+    save_managed_shims(&shims_root, &managed)?;
     Ok(created)
+}
+
+fn managed_shims_path(shims_root: &Path) -> PathBuf {
+    shims_root.join(MANAGED_SHIMS_FILE)
+}
+
+fn load_managed_shims(shims_root: &Path) -> Result<BTreeSet<String>, AppError> {
+    let path = managed_shims_path(shims_root);
+    if !path.exists() {
+        return Ok(BTreeSet::new());
+    }
+    let contents = fs::read_to_string(path)?;
+    let mut shims = BTreeSet::new();
+    for line in contents.lines() {
+        let value = line.trim();
+        if !value.is_empty() {
+            shims.insert(value.to_string());
+        }
+    }
+    Ok(shims)
+}
+
+fn save_managed_shims(shims_root: &Path, shims: &BTreeSet<String>) -> Result<(), AppError> {
+    let contents = if shims.is_empty() {
+        String::new()
+    } else {
+        let mut value = shims.iter().cloned().collect::<Vec<_>>().join("\n");
+        value.push('\n');
+        value
+    };
+    fs::write(managed_shims_path(shims_root), contents)?;
+    Ok(())
 }
 
 pub struct BinResolution {
@@ -189,7 +242,8 @@ fn resolve_bin_for_tool(
         Some(package) => package,
         None => {
             if allow_missing_manifest {
-                return Ok(None);
+                return Ok(runtime_bin_path_for_name(cache, tool, version, bin_name)?
+                    .map(|path| BinResolution { path }));
             }
             return Err(AppError::Cache {
                 message: format!(
@@ -202,11 +256,18 @@ fn resolve_bin_for_tool(
 
     let path = if package.bin_paths.is_empty() {
         if bin_name != tool {
-            return Ok(None);
+            runtime_bin_path_for_name(cache, tool, version, bin_name)?
+        } else {
+            Some(cache.tool_bin_path(tool, version))
         }
-        Some(cache.tool_bin_path(tool, version))
     } else {
-        bin_path_for_name(cache, tool, version, bin_name, &package.bin_paths)
+        match bin_path_for_name(cache, tool, version, bin_name, &package.bin_paths) {
+            Some(path) => Some(path),
+            None if allow_missing_manifest => {
+                runtime_bin_path_for_name(cache, tool, version, bin_name)?
+            }
+            None => None,
+        }
     };
 
     let path = match path {
@@ -221,6 +282,29 @@ fn resolve_bin_for_tool(
     }
 
     Ok(Some(BinResolution { path }))
+}
+
+fn runtime_bin_path_for_name(
+    cache: &Cache,
+    tool: &str,
+    version: &str,
+    bin_name: &str,
+) -> Result<Option<PathBuf>, AppError> {
+    let bin_dir = cache.tool_bin_dir(tool, version);
+    if !bin_dir.exists() {
+        return Ok(None);
+    }
+    for entry in fs::read_dir(&bin_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if path.file_stem().and_then(|value| value.to_str()) == Some(bin_name) {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 fn bin_path_for_name(
@@ -436,6 +520,35 @@ name = "node"
     }
 
     #[test]
+    fn sync_runtime_shims_prunes_managed_only() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().join("cache"));
+        let shims = temp.path().join("shims");
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "24.3.1")]),
+            },
+            ..Default::default()
+        };
+        let bin_dir = cache.tool_bin_dir("node", "24.3.1");
+        fs::create_dir_all(&bin_dir).expect("mkdir");
+        fs::write(bin_dir.join("node"), b"node").expect("write node");
+        fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
+        sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
+            .expect("initial sync");
+        let unmanaged = shim_path_for(&shims, "python");
+        fs::write(&unmanaged, b"external").expect("write unmanaged");
+
+        fs::remove_file(bin_dir.join("pnpm")).expect("remove pnpm bin");
+        sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
+            .expect("second sync");
+
+        assert!(shim_path_for(&shims, "node").exists());
+        assert!(!shim_path_for(&shims, "pnpm").exists());
+        assert!(unmanaged.exists());
+    }
+
+    #[test]
     fn resolve_bin_path_returns_cache_error_when_direct_bin_missing_in_package() {
         let config = Config {
             global: Global {
@@ -479,5 +592,36 @@ name = "node"
             Err(err) => err,
         };
         assert!(matches!(err, AppError::Cache { .. }));
+    }
+
+    #[test]
+    fn resolve_bin_path_finds_runtime_bin_not_listed_in_manifest() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "22.0.0")]),
+            },
+            ..Default::default()
+        };
+        let manifest = sample_manifest();
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+        let tsc_bin = cache.tool_bin_dir("node", "22.0.0").join("tsc");
+        fs::create_dir_all(tsc_bin.parent().expect("parent")).expect("mkdir");
+        fs::write(&tsc_bin, b"x").expect("write");
+
+        let resolved = resolve_bin_path(
+            &config,
+            Path::new("workspace"),
+            "tsc",
+            &cache,
+            &manifest,
+            &target,
+        )
+        .expect("resolve runtime bin");
+        assert_eq!(resolved.path, tsc_bin);
     }
 }
