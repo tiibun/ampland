@@ -1,4 +1,10 @@
+# Build artifacts
 /target
-.vscode/
+
+# coverage
 coverage.lcov
 lcov.info
+
+# IDEs
+.vscode/
+.devcontainer/
