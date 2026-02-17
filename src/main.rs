@@ -132,6 +132,15 @@ fn run() -> Result<(), AppError> {
                             .to_string(),
                 });
             };
+            let usages = config.is_tool_version_in_use(&tool, &version);
+            if !usages.is_empty() {
+                return Err(AppError::Config {
+                    message: format!(
+                        "{tool}@{version} is still in use. Configurations found in: {}",
+                        usages.join(", ")
+                    ),
+                });
+            }
             cache.uninstall(&tool, &version)?;
             let tool_still_configured = config.all_tool_versions().contains_key(&tool);
             if !tool_still_configured {

@@ -99,6 +99,28 @@ impl Config {
         }
         map
     }
+
+    pub fn is_tool_version_in_use(&self, tool: &str, version: &str) -> Vec<String> {
+        let mut usages = Vec::new();
+
+        // Check if used globally
+        if let Some(global_version) = self.global.tools.get(tool) {
+            if global_version == version {
+                usages.push("global".to_string());
+            }
+        }
+
+        // Check if used in any scope
+        for scope in &self.scopes {
+            if let Some(scope_version) = scope.tools.get(tool) {
+                if scope_version == version {
+                    usages.push(format!("scope: {}", scope.pattern));
+                }
+            }
+        }
+
+        usages
+    }
 }
 
 impl LockFile {
@@ -210,5 +232,54 @@ mod tests {
         let json = lock.to_string(Format::Json).expect("json encode");
         let decoded_json = LockFile::parse(&json, Format::Json).expect("json decode");
         assert_eq!(decoded_json.tools.get("bun"), Some(&"1.0.0".to_string()));
+    }
+
+    #[test]
+    fn is_tool_version_in_use_detects_global_usage() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.0.0"), ("bun", "1.0.0")]),
+            },
+            scopes: vec![],
+            ..Default::default()
+        };
+
+        let usages = config.is_tool_version_in_use("node", "20.0.0");
+        assert!(!usages.is_empty());
+        assert!(usages.iter().any(|u| u == "global"));
+
+        let unused = config.is_tool_version_in_use("node", "22.0.0");
+        assert!(unused.is_empty());
+    }
+
+    #[test]
+    fn is_tool_version_in_use_detects_scoped_usage() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.0.0")]),
+            },
+            scopes: vec![
+                Scope {
+                    pattern: "/workspace/**".into(),
+                    tools: map(&[("node", "22.0.0")]),
+                },
+                Scope {
+                    pattern: "/project/**".into(),
+                    tools: map(&[("bun", "1.0.0")]),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let usages = config.is_tool_version_in_use("node", "22.0.0");
+        assert!(!usages.is_empty());
+        assert!(usages.iter().any(|u| u.contains("workspace")));
+
+        let usages = config.is_tool_version_in_use("bun", "1.0.0");
+        assert!(!usages.is_empty());
+        assert!(usages.iter().any(|u| u.contains("project")));
+
+        let unused = config.is_tool_version_in_use("deno", "1.0.0");
+        assert!(unused.is_empty());
     }
 }
