@@ -112,20 +112,8 @@ fn sync_runtime_shims(
     let resolved = resolve_tools(config, cwd)?;
     let mut names = BTreeSet::new();
     for (tool, version) in resolved.tools {
-        let bin_dir = cache.tool_bin_dir(&tool, &version);
-        if !bin_dir.exists() {
-            continue;
-        }
-        for entry in fs::read_dir(&bin_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
-                names.insert(stem.to_string());
-            }
-        }
+        let runtime_names = list_runtime_bin_names(cache, &tool, &version)?;
+        names.extend(runtime_names);
     }
 
     let mut managed = load_managed_shims(&shims_root)?;
@@ -290,21 +278,12 @@ fn runtime_bin_path_for_name(
     version: &str,
     bin_name: &str,
 ) -> Result<Option<PathBuf>, AppError> {
-    let bin_dir = cache.tool_bin_dir(tool, version);
-    if !bin_dir.exists() {
+    let version_dir = cache.tool_version_dir(tool, version);
+    if !version_dir.exists() {
         return Ok(None);
     }
-    for entry in fs::read_dir(&bin_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if path.file_stem().and_then(|value| value.to_str()) == Some(bin_name) {
-            return Ok(Some(path));
-        }
-    }
-    Ok(None)
+
+    find_runtime_bin(&version_dir, bin_name)
 }
 
 fn bin_path_for_name(
@@ -314,15 +293,81 @@ fn bin_path_for_name(
     bin_name: &str,
     bin_paths: &[String],
 ) -> Option<PathBuf> {
-    let bin_dir = cache.tool_bin_dir(tool, version);
+    let version_dir = cache.tool_version_dir(tool, version);
     bin_paths.iter().find_map(|path| {
         let stem = Path::new(path).file_stem()?.to_str()?;
         if stem != bin_name {
             return None;
         }
-        let file_name = Path::new(path).file_name()?.to_str()?;
-        Some(bin_dir.join(file_name))
+        Some(version_dir.join(path))
     })
+}
+
+fn list_runtime_bin_names(
+    cache: &Cache,
+    tool: &str,
+    version: &str,
+) -> Result<BTreeSet<String>, AppError> {
+    let mut names = BTreeSet::new();
+    let version_dir = cache.tool_version_dir(tool, version);
+    if !version_dir.exists() {
+        return Ok(names);
+    }
+    for dir in candidate_bin_dirs(&version_dir) {
+        if !dir.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
+                names.insert(stem.to_string());
+            }
+        }
+    }
+    Ok(names)
+}
+
+fn find_runtime_bin(version_dir: &Path, bin_name: &str) -> Result<Option<PathBuf>, AppError> {
+    for dir in candidate_bin_dirs(version_dir) {
+        if !dir.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if path.file_stem().and_then(|value| value.to_str()) == Some(bin_name) {
+                return Ok(Some(path));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn candidate_bin_dirs(version_dir: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![version_dir.to_path_buf(), version_dir.join("bin")];
+    if cfg!(windows) {
+        dirs.push(version_dir.join("Scripts"));
+    }
+    if let Ok(entries) = fs::read_dir(version_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            dirs.push(path.join("bin"));
+            if cfg!(windows) {
+                dirs.push(path.join("Scripts"));
+            }
+        }
+    }
+    dirs
 }
 
 pub fn list_shim_names(config: &Config, manifest: &Manifest, target: &Target) -> Vec<String> {
@@ -451,7 +496,10 @@ name = "node"
 
         let temp = tempfile::tempdir().expect("tempdir");
         let cache = Cache::new(temp.path().to_path_buf());
-        let node_bin = cache.tool_bin_dir("node", "22.0.0").join("node");
+        let node_bin = cache
+            .tool_version_dir("node", "22.0.0")
+            .join("bin")
+            .join("node");
         fs::create_dir_all(node_bin.parent().expect("parent")).expect("mkdir");
         fs::write(&node_bin, b"x").expect("write");
 
@@ -506,7 +554,7 @@ name = "node"
             },
             ..Default::default()
         };
-        let bin_dir = cache.tool_bin_dir("node", "24.3.1");
+        let bin_dir = cache.tool_version_dir("node", "24.3.1").join("bin");
         fs::create_dir_all(&bin_dir).expect("mkdir");
         fs::write(bin_dir.join("node"), b"node").expect("write node");
         fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
@@ -530,7 +578,7 @@ name = "node"
             },
             ..Default::default()
         };
-        let bin_dir = cache.tool_bin_dir("node", "24.3.1");
+        let bin_dir = cache.tool_version_dir("node", "24.3.1").join("bin");
         fs::create_dir_all(&bin_dir).expect("mkdir");
         fs::write(bin_dir.join("node"), b"node").expect("write node");
         fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
@@ -609,7 +657,10 @@ name = "node"
         };
         let temp = tempfile::tempdir().expect("tempdir");
         let cache = Cache::new(temp.path().to_path_buf());
-        let tsc_bin = cache.tool_bin_dir("node", "22.0.0").join("tsc");
+        let tsc_bin = cache
+            .tool_version_dir("node", "22.0.0")
+            .join("bin")
+            .join("tsc");
         fs::create_dir_all(tsc_bin.parent().expect("parent")).expect("mkdir");
         fs::write(&tsc_bin, b"x").expect("write");
 

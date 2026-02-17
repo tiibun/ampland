@@ -41,50 +41,44 @@ pub fn install(
 
         match package.format {
             PackageFormat::File => {
-                let bin_dir = cache.tool_bin_dir(tool, version);
-                fs::create_dir_all(&bin_dir)?;
-                if package.bin_paths.is_empty() {
-                    fs::copy(&archive_path, &install_path)?;
-                    make_executable(&install_path)?;
-                } else if package.bin_paths.len() == 1 {
-                    let target = bin_dir.join(bin_file_name(&package.bin_paths[0])?);
-                    fs::copy(&archive_path, &target)?;
-                    make_executable(&target)?;
-                } else {
+                if package.bin_paths.len() > 1 {
                     return Err(AppError::Cache {
                         message: "file package cannot define multiple bin_paths".to_string(),
                     });
                 }
+                let target = if let Some(path) = package.bin_paths.first() {
+                    version_dir.join(path)
+                } else {
+                    install_path.clone()
+                };
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(&archive_path, &target)?;
+                make_executable(&target)?;
             }
             PackageFormat::TarGz => {
-                let bin_dir = cache.tool_bin_dir(tool, version);
                 unpack_tar_gz(&archive_path, &version_dir)?;
                 let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
-                fs::create_dir_all(&bin_dir)?;
-                install_from_unpack(&version_dir, &bin_dir, &bin_paths, "tar.gz")?;
+                finalize_unpacked_bins(&version_dir, &bin_paths, "tar.gz")?;
             }
             PackageFormat::TarXz => {
-                let bin_dir = cache.tool_bin_dir(tool, version);
                 unpack_tar_xz(&archive_path, &version_dir)?;
                 let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
-                fs::create_dir_all(&bin_dir)?;
-                install_from_unpack(&version_dir, &bin_dir, &bin_paths, "tar.xz")?;
+                finalize_unpacked_bins(&version_dir, &bin_paths, "tar.xz")?;
             }
             PackageFormat::Zip => {
-                let bin_dir = cache.tool_bin_dir(tool, version);
                 unpack_zip(&archive_path, &version_dir)?;
                 let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
-                fs::create_dir_all(&bin_dir)?;
-                install_from_unpack(&version_dir, &bin_dir, &bin_paths, "zip")?;
+                finalize_unpacked_bins(&version_dir, &bin_paths, "zip")?;
             }
         }
         Ok(install_path)
     })
 }
 
-fn install_from_unpack(
+fn finalize_unpacked_bins(
     unpack_dir: &Path,
-    bin_dir: &Path,
     bin_paths: &[String],
     format: &str,
 ) -> Result<(), AppError> {
@@ -101,11 +95,7 @@ fn install_from_unpack(
                 message: format!("bin_path not found in archive: {}", source.display()),
             });
         }
-        let target = bin_dir.join(bin_file_name(bin_path)?);
-        if source != target {
-            fs::copy(&source, &target)?;
-        }
-        make_executable(&target)?;
+        make_executable(&source)?;
     }
 
     Ok(())
@@ -146,26 +136,13 @@ fn normalize_unpacked_layout(
         .collect())
 }
 
-fn bin_file_name(path: &str) -> Result<String, AppError> {
-    Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(|name| name.to_string())
-        .ok_or_else(|| AppError::Cache {
-            message: format!("invalid bin_path: {path}"),
-        })
-}
-
 fn primary_bin_path(cache: &Cache, tool: &str, version: &str, bin_paths: &[String]) -> PathBuf {
+    let version_dir = cache.tool_version_dir(tool, version);
     if let Some(bin_path) = find_bin_path(tool, bin_paths) {
-        if let Ok(file_name) = bin_file_name(bin_path) {
-            return cache.tool_bin_dir(tool, version).join(file_name);
-        }
+        return version_dir.join(bin_path);
     }
     if let Some(first) = bin_paths.first() {
-        if let Ok(file_name) = bin_file_name(first) {
-            return cache.tool_bin_dir(tool, version).join(file_name);
-        }
+        return version_dir.join(first);
     }
     cache.tool_bin_path(tool, version)
 }
@@ -284,9 +261,6 @@ mod tests {
 
     #[test]
     fn bin_name_and_path_selection_work() {
-        assert_eq!(bin_file_name("a/b/node").expect("name"), "node");
-        assert!(bin_file_name("..").is_err());
-
         let paths = vec!["bin/npm".to_string(), "bin/node".to_string()];
         assert_eq!(find_bin_path("node", &paths), Some("bin/node"));
         assert_eq!(find_bin_path("bun", &paths), None);
@@ -301,7 +275,7 @@ mod tests {
             "22",
             &[String::from("nested/npm"), String::from("nested/npx")],
         );
-        assert!(fallback.ends_with("node/22/bin/npm"));
+        assert!(fallback.ends_with("node/22/nested/npm"));
     }
 
     #[test]
@@ -316,23 +290,21 @@ mod tests {
     }
 
     #[test]
-    fn install_from_unpack_validates_missing_bins() {
+    fn finalize_unpacked_bins_validates_missing_bins() {
         let temp = tempfile::tempdir().expect("tempdir");
         let unpack = temp.path().join("unpack");
-        let out = temp.path().join("bin");
         fs::create_dir_all(&unpack).expect("mkdir");
-        fs::create_dir_all(&out).expect("mkdir");
 
-        let err = install_from_unpack(&unpack, &out, &[], "tar.gz").expect_err("missing paths");
+        let err = finalize_unpacked_bins(&unpack, &[], "tar.gz").expect_err("missing paths");
         assert!(matches!(err, AppError::Cache { .. }));
 
-        let err = install_from_unpack(&unpack, &out, &[String::from("bin/node")], "tar.gz")
+        let err = finalize_unpacked_bins(&unpack, &[String::from("bin/node")], "tar.gz")
             .expect_err("missing source");
         assert!(matches!(err, AppError::Cache { .. }));
     }
 
     #[test]
-    fn install_from_unpack_handles_same_source_and_target() {
+    fn finalize_unpacked_bins_accepts_existing_bins() {
         let temp = tempfile::tempdir().expect("tempdir");
         let unpack = temp.path().join("unpack");
         let bin = unpack.join("bin");
@@ -340,11 +312,8 @@ mod tests {
         let node_path = bin.join("node");
         fs::write(&node_path, b"node-binary").expect("write");
 
-        install_from_unpack(&unpack, &bin, &[String::from("bin/node")], "tar.gz")
-            .expect("install from unpack");
-
-        let bytes = fs::read(&node_path).expect("read");
-        assert_eq!(bytes, b"node-binary");
+        finalize_unpacked_bins(&unpack, &[String::from("bin/node")], "tar.gz")
+            .expect("finalize unpack");
     }
 
     #[test]

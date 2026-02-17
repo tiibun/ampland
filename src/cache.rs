@@ -22,20 +22,20 @@ impl Cache {
         self.root.join(tool).join(version)
     }
 
-    pub fn tool_bin_dir(&self, tool: &str, version: &str) -> PathBuf {
-        self.tool_version_dir(tool, version).join("bin")
-    }
-
     pub fn tool_bin_path(&self, tool: &str, version: &str) -> PathBuf {
         let mut name = tool.to_string();
         if cfg!(windows) {
             name.push_str(".exe");
         }
-        self.tool_bin_dir(tool, version).join(name)
+        self.tool_version_dir(tool, version).join(name)
     }
 
     pub fn is_installed(&self, tool: &str, version: &str) -> bool {
-        self.tool_bin_path(tool, version).exists()
+        let dir = self.tool_version_dir(tool, version);
+        if !dir.exists() {
+            return false;
+        }
+        fs::read_dir(&dir).map(|mut entries| entries.next().is_some()).unwrap_or(false)
     }
 
     pub fn with_lock<T, F: FnOnce() -> Result<T, AppError>>(&self, f: F) -> Result<T, AppError> {
@@ -133,7 +133,6 @@ mod tests {
         let cache = Cache::new(temp.path().to_path_buf());
         assert_eq!(cache.root(), temp.path());
         assert!(cache.tool_version_dir("node", "22").ends_with("node/22"));
-        assert!(cache.tool_bin_dir("node", "22").ends_with("node/22/bin"));
 
         assert!(!cache.is_installed("node", "22"));
         let bin = cache.tool_bin_path("node", "22");
