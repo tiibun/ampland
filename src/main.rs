@@ -56,47 +56,75 @@ fn run() -> Result<(), AppError> {
             global,
             path,
         } => {
-            let (tool, version) = normalize_tool_version_arg(tool, version);
-            let Some(version) = version else {
-                return Err(AppError::Config {
-                    message: "use requires a version (e.g. ampland use node 22 or node@22)"
-                        .to_string(),
-                });
-            };
             let target = Target::current()?;
             let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
-            let version = resolve_version_spec(&manifest, &tool, &version, &target)?;
-            let mut scope_label = None;
-            if global {
-                config.global.tools.insert(tool.clone(), version.clone());
+            let cwd = resolve_path(cli.path.clone(), path.clone())?;
+
+            // If tool is None, read from .tool-versions
+            let tools_to_set = if let Some(tool) = tool {
+                let (tool, version) = normalize_tool_version_arg(tool, version);
+                let Some(version) = version else {
+                    return Err(AppError::Config {
+                        message: "use requires a version (e.g. ampland use node 22 or node@22)"
+                            .to_string(),
+                    });
+                };
+                vec![(tool, version)]
             } else {
-                let cwd = resolve_path(cli.path, path)?;
-                let pattern = normalize_scope_pattern(&cwd);
-                upsert_scope_tool(&mut config, &pattern, &tool, &version);
-                scope_label = Some(pattern);
-            }
-            if !cache.is_installed(&tool, &version) {
-                let package =
-                    manifest
-                        .resolve(&tool, &version, &target)
-                        .ok_or_else(|| AppError::Cache {
-                            message: format!(
-                                "no installer for {tool}@{version} ({}/{})",
-                                target.platform, target.arch
-                            ),
-                        })?;
-                let bin_path = install(&cache, &tool, &version, &package)?;
-                if !cli.quiet {
-                    println!("installed {tool}@{version} -> {}", bin_path.display());
+                let tool_versions_path = cwd.join(".tool-versions");
+                if !tool_versions_path.exists() {
+                    return Err(AppError::Config {
+                        message: format!(
+                            "no .tool-versions file found at {}",
+                            tool_versions_path.display()
+                        ),
+                    });
                 }
+                parse_tool_versions_file(&tool_versions_path)?
+            };
+
+            let mut scope_label = None;
+            let mut installed_tools = Vec::new();
+
+            for (tool, version_spec) in tools_to_set {
+                let version = resolve_version_spec(&manifest, &tool, &version_spec, &target)?;
+
+                if global {
+                    config.global.tools.insert(tool.clone(), version.clone());
+                } else {
+                    let pattern = normalize_scope_pattern(&cwd);
+                    upsert_scope_tool(&mut config, &pattern, &tool, &version);
+                    scope_label = Some(pattern);
+                }
+
+                if !cache.is_installed(&tool, &version) {
+                    let package =
+                        manifest
+                            .resolve(&tool, &version, &target)
+                            .ok_or_else(|| AppError::Cache {
+                                message: format!(
+                                    "no installer for {tool}@{version} ({}/{})",
+                                    target.platform, target.arch
+                                ),
+                            })?;
+                    let bin_path = install(&cache, &tool, &version, &package)?;
+                    if !cli.quiet {
+                        println!("installed {tool}@{version} -> {}", bin_path.display());
+                    }
+                }
+                installed_tools.push((tool, version));
             }
+
             config.save(&config_path)?;
             shim::rebuild_shims(&config, cli.shims_dir.as_deref())?;
+
             if !cli.quiet {
-                if global {
-                    println!("set {tool}@{version} for global");
-                } else if let Some(pattern) = scope_label {
-                    println!("set {tool}@{version} for {pattern}");
+                for (tool, version) in installed_tools {
+                    if global {
+                        println!("set {tool}@{version} for global");
+                    } else if let Some(ref pattern) = scope_label {
+                        println!("set {tool}@{version} for {pattern}");
+                    }
                 }
             }
         }
@@ -469,6 +497,40 @@ fn normalize_tool_version_arg(tool: String, version: Option<String>) -> (String,
     }
 
     (tool, None)
+}
+
+fn parse_tool_versions_file(path: &Path) -> Result<Vec<(String, String)>, AppError> {
+    let contents = std::fs::read_to_string(path).map_err(|err| AppError::Config {
+        message: format!("failed to read {}: {}", path.display(), err),
+    })?;
+
+    let mut result = Vec::new();
+    for (line_num, line) in contents.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut parts = line.split_whitespace();
+        let tool = parts.next().ok_or_else(|| AppError::Config {
+            message: format!(
+                "invalid format at line {} in {}",
+                line_num + 1,
+                path.display()
+            ),
+        })?;
+        let version = parts.next().ok_or_else(|| AppError::Config {
+            message: format!(
+                "missing version at line {} in {}",
+                line_num + 1,
+                path.display()
+            ),
+        })?;
+
+        result.push((tool.to_string(), version.to_string()));
+    }
+
+    Ok(result)
 }
 
 fn resolve_latest_version(

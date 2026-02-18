@@ -27,7 +27,7 @@ pub struct Cli {
 pub enum Command {
     #[command(about = "Set the active tool version")]
     Use {
-        tool: String,
+        tool: Option<String>,
         version: Option<String>,
         #[arg(short, long)]
         global: bool,
