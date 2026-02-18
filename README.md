@@ -6,6 +6,52 @@ selected binaries.
 
 ## Installation
 
+### Download from releases
+
+#### macOS and Linux
+
+```sh
+# Download the latest release for your platform
+curl -L https://github.com/tiibun/ampland/releases/latest/download/ampland-$(uname -s)-$(uname -m) -o ampland
+
+# Make it executable
+chmod +x ampland
+
+# Move to a directory in your PATH
+sudo mv ampland /usr/local/bin/
+```
+
+Or install to a user directory:
+
+```sh
+mkdir -p ~/.local/bin
+mv ampland ~/.local/bin/
+# Ensure ~/.local/bin is in your PATH
+```
+
+#### Windows
+
+Download the latest release from:
+```
+https://github.com/tiibun/ampland/releases/latest
+```
+
+Download `ampland-Windows-x86_64.exe`, rename it to `ampland.exe`, and place it in a directory in your PATH.
+
+Or use PowerShell:
+
+```powershell
+# Download the latest release
+Invoke-WebRequest -Uri "https://github.com/tiibun/ampland/releases/latest/download/ampland-Windows-x86_64.exe" -OutFile "$env:LOCALAPPDATA\ampland\ampland.exe"
+
+# Add to PATH (optional, if not already in PATH)
+[Environment]::SetEnvironmentVariable(
+	"PATH",
+	"$env:LOCALAPPDATA\ampland;" + [Environment]::GetEnvironmentVariable("PATH", "User"),
+	"User"
+)
+```
+
 ### Build from source
 
 ```
