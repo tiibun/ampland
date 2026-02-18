@@ -63,6 +63,19 @@ pub enum Command {
         #[command(subcommand)]
         command: ShimCommand,
     },
+    #[command(about = "Manage configuration")]
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigCommand {
+    #[command(about = "Show config file path and contents")]
+    Show,
+    #[command(about = "Edit config file in default editor")]
+    Edit,
 }
 
 #[derive(Debug, Subcommand)]

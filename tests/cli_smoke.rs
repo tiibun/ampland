@@ -48,11 +48,7 @@ fn uninstall_in_use_version_fails() {
     let cache_tool_dir = cache.join("node").join("22.0.0");
 
     // Create a config with node@22.0.0 configured globally
-    fs::write(
-        &config_file,
-        "[global]\ntools = { node = \"22.0.0\" }\n",
-    )
-    .expect("write config");
+    fs::write(&config_file, "[global]\ntools = { node = \"22.0.0\" }\n").expect("write config");
 
     // Create fake tool version directory
     fs::create_dir_all(&cache_tool_dir).expect("create tool cache dir");
@@ -79,4 +75,103 @@ fn uninstall_in_use_version_fails() {
         "Error should mention tool is in use, got: {}",
         stderr
     );
+}
+
+#[test]
+fn config_show_nonexistent_file() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("config")
+        .arg("show")
+        .output()
+        .expect("run ampland");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("does not exist"));
+}
+
+#[test]
+fn config_show_existing_file() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_file = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+
+    // Create a config file
+    fs::write(&config_file, "[global.tools]\nnode = \"22.0.0\"\n").expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config_file)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("config")
+        .arg("show")
+        .output()
+        .expect("run ampland");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[global.tools]"));
+    assert!(stdout.contains("node = \"22.0.0\""));
+}
+
+#[test]
+fn config_show_json_format() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_file = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+
+    // Create a config file
+    fs::write(&config_file, "[global.tools]\nnode = \"22.0.0\"\n").expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config_file)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("--json")
+        .arg("config")
+        .arg("show")
+        .output()
+        .expect("run ampland");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"path\""));
+    assert!(stdout.contains("\"contents\""));
+
+    // Parse as JSON to ensure it's valid
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("parse JSON");
+    assert!(json.get("path").is_some());
+    assert!(json.get("contents").is_some());
+}
+
+#[test]
+fn config_edit_creates_file() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_file = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+
+    // Use `true` as editor which just exits successfully
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .env("EDITOR", "true")
+        .arg("--config")
+        .arg(&config_file)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("config")
+        .arg("edit")
+        .output()
+        .expect("run ampland");
+
+    assert!(output.status.success());
+    assert!(config_file.exists());
 }
