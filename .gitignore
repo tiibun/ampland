@@ -8,3 +8,9 @@ lcov.info
 # IDEs
 .vscode/
 .devcontainer/
+
+# Agent planning/scratchpad files
+# Content should be copied to PR descriptions (see AGENTS.md)
+PLAN.md
+TASKS.md
+.agent/
