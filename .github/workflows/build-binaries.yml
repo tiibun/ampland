@@ -15,12 +15,19 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
             bin_path: target/release/ampland
             artifact_name: ampland-linux-x64
           - os: macos-latest
+            target: aarch64-apple-darwin
             bin_path: target/release/ampland
             artifact_name: ampland-macos-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bin_path: target/release/ampland
+            artifact_name: ampland-macos-x64
           - os: windows-latest
+            target: x86_64-pc-windows-msvc
             bin_path: target/release/ampland.exe
             artifact_name: ampland-windows-x64.exe
 
@@ -33,21 +40,24 @@ jobs:
       - name: Prepare
         uses: ./.github/actions/prepare-rust
 
+      - name: Install target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Build (release)
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Prepare release asset (non-Windows)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp "${{ matrix.bin_path }}" "dist/${{ matrix.artifact_name }}"
+          cp "target/${{ matrix.target }}/release/ampland" "dist/${{ matrix.artifact_name }}"
 
       - name: Prepare release asset (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item "${{ matrix.bin_path }}" "dist/${{ matrix.artifact_name }}"
+          Copy-Item "target/${{ matrix.target }}/release/ampland.exe" "dist/${{ matrix.artifact_name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

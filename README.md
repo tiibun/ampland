@@ -8,11 +8,37 @@ selected binaries.
 
 ### Download from releases
 
-#### macOS and Linux
+#### macOS
+
+For Apple Silicon:
 
 ```sh
-# Download the latest release for your platform
-curl -L https://github.com/tiibun/ampland/releases/latest/download/ampland-$(uname -s)-$(uname -m) -o ampland
+curl -L https://github.com/tiibun/ampland/releases/latest/download/ampland-macos-arm64 -o ampland
+chmod +x ampland
+sudo mv ampland /usr/local/bin/
+```
+
+For Intel Mac:
+
+```sh
+curl -L https://github.com/tiibun/ampland/releases/latest/download/ampland-macos-x64 -o ampland
+chmod +x ampland
+sudo mv ampland /usr/local/bin/
+```
+
+Or install to a user directory:
+
+```sh
+mkdir -p ~/.local/bin
+mv ampland ~/.local/bin/
+# Ensure ~/.local/bin is in your PATH
+```
+
+#### Linux
+
+```sh
+# For x86_64
+curl -L https://github.com/tiibun/ampland/releases/latest/download/ampland-linux-x64 -o ampland
 
 # Make it executable
 chmod +x ampland
@@ -36,13 +62,13 @@ Download the latest release from:
 https://github.com/tiibun/ampland/releases/latest
 ```
 
-Download `ampland-Windows-x86_64.exe`, rename it to `ampland.exe`, and place it in a directory in your PATH.
+Download `ampland-windows-x64.exe`, rename it to `ampland.exe`, and place it in a directory in your PATH.
 
 Or use PowerShell:
 
 ```powershell
 # Download the latest release
-Invoke-WebRequest -Uri "https://github.com/tiibun/ampland/releases/latest/download/ampland-Windows-x86_64.exe" -OutFile "$env:LOCALAPPDATA\ampland\ampland.exe"
+Invoke-WebRequest -Uri "https://github.com/tiibun/ampland/releases/latest/download/ampland-windows-x64.exe" -OutFile "$env:LOCALAPPDATA\ampland\ampland.exe"
 
 # Add to PATH (optional, if not already in PATH)
 [Environment]::SetEnvironmentVariable(
