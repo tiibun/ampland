@@ -662,4 +662,103 @@ name = "node"
             Some(&"1.0.0".to_string())
         );
     }
+
+    #[test]
+    fn parse_tool_versions_file_valid() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let tool_versions_path = temp_dir.path().join(".tool-versions");
+        
+        std::fs::write(
+            &tool_versions_path,
+            "node 20.10.0\npython 3.11.5\ngo 1.21.0\n",
+        )
+        .expect("write file");
+        
+        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
+        assert_eq!(result[1], ("python".to_string(), "3.11.5".to_string()));
+        assert_eq!(result[2], ("go".to_string(), "1.21.0".to_string()));
+    }
+
+    #[test]
+    fn parse_tool_versions_file_with_comments_and_empty_lines() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let tool_versions_path = temp_dir.path().join(".tool-versions");
+        
+        std::fs::write(
+            &tool_versions_path,
+            "# This is a comment\nnode 20.10.0\n\n# Another comment\npython 3.11.5\n\n",
+        )
+        .expect("write file");
+        
+        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
+        assert_eq!(result[1], ("python".to_string(), "3.11.5".to_string()));
+    }
+
+    #[test]
+    fn parse_tool_versions_file_with_extra_whitespace() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let tool_versions_path = temp_dir.path().join(".tool-versions");
+        
+        std::fs::write(
+            &tool_versions_path,
+            "  node   20.10.0  \n  python   3.11.5  \n",
+        )
+        .expect("write file");
+        
+        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
+        assert_eq!(result[1], ("python".to_string(), "3.11.5".to_string()));
+    }
+
+    #[test]
+    fn parse_tool_versions_file_missing_version() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let tool_versions_path = temp_dir.path().join(".tool-versions");
+        
+        std::fs::write(&tool_versions_path, "node\n").expect("write file");
+        
+        let result = parse_tool_versions_file(&tool_versions_path);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("missing version"));
+        assert!(err_msg.contains("line 1"));
+    }
+
+    #[test]
+    fn parse_tool_versions_file_not_found() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let tool_versions_path = temp_dir.path().join("nonexistent.tool-versions");
+        
+        let result = parse_tool_versions_file(&tool_versions_path);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("failed to read"));
+    }
+
+    #[test]
+    fn parse_tool_versions_file_empty() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let tool_versions_path = temp_dir.path().join(".tool-versions");
+        
+        std::fs::write(&tool_versions_path, "").expect("write file");
+        
+        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn parse_tool_versions_file_only_comments() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let tool_versions_path = temp_dir.path().join(".tool-versions");
+        
+        std::fs::write(&tool_versions_path, "# comment 1\n# comment 2\n").expect("write file");
+        
+        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
+        assert_eq!(result.len(), 0);
+    }
 }
