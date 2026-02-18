@@ -35,7 +35,9 @@ impl Cache {
         if !dir.exists() {
             return false;
         }
-        fs::read_dir(&dir).map(|mut entries| entries.next().is_some()).unwrap_or(false)
+        fs::read_dir(&dir)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false)
     }
 
     pub fn with_lock<T, F: FnOnce() -> Result<T, AppError>>(&self, f: F) -> Result<T, AppError> {
@@ -176,7 +178,9 @@ mod tests {
     fn uninstall_missing_version_returns_error() {
         let temp = tempfile::tempdir().expect("tempdir");
         let cache = Cache::new(temp.path().to_path_buf());
-        let err = cache.uninstall("node", "99").expect_err("missing install should fail");
+        let err = cache
+            .uninstall("node", "99")
+            .expect_err("missing install should fail");
         assert!(matches!(err, AppError::Cache { .. }));
     }
 }

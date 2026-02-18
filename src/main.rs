@@ -16,7 +16,7 @@ use clap::Parser;
 use semver::Version;
 
 use crate::cache::Cache;
-use crate::cli::{Cli, Command, ShimCommand};
+use crate::cli::{Cli, Command, ConfigCommand, ShimCommand};
 use crate::config::{Config, Scope};
 use crate::doctor::run_doctor;
 use crate::error::AppError;
@@ -308,6 +308,63 @@ fn run() -> Result<(), AppError> {
                 let path = shim::add_shim(&tool, cli.shims_dir.as_deref())?;
                 if !cli.quiet {
                     println!("shimmed {}", path.display());
+                }
+            }
+        },
+        Command::Config { command } => match command {
+            ConfigCommand::Show => {
+                if cli.json {
+                    let mut output = std::collections::BTreeMap::new();
+                    output.insert("path", config_path.to_string_lossy().to_string());
+                    let contents = if config_path.exists() {
+                        std::fs::read_to_string(&config_path)?
+                    } else {
+                        String::new()
+                    };
+                    output.insert("contents", contents);
+                    println!("{}", serde_json::to_string_pretty(&output)?);
+                } else if !cli.quiet {
+                    println!("config: {}", config_path.display());
+                    if config_path.exists() {
+                        let contents = std::fs::read_to_string(&config_path)?;
+                        println!("{}", contents);
+                    } else {
+                        println!("(file does not exist)");
+                    }
+                }
+            }
+            ConfigCommand::Edit => {
+                // Ensure the config file and its parent directories exist
+                if let Some(parent) = config_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                if !config_path.exists() {
+                    std::fs::write(&config_path, "")?;
+                }
+
+                // Open in editor
+                let editor = std::env::var("VISUAL")
+                    .or_else(|_| std::env::var("EDITOR"))
+                    .unwrap_or_else(|_| {
+                        if cfg!(windows) {
+                            "notepad".to_string()
+                        } else {
+                            "vi".to_string()
+                        }
+                    });
+
+                let status = std::process::Command::new(&editor)
+                    .arg(&config_path)
+                    .status()?;
+
+                if !status.success() {
+                    return Err(AppError::Config {
+                        message: format!("editor {} exited with error", editor),
+                    });
+                }
+
+                if !cli.quiet {
+                    println!("edited {}", config_path.display());
                 }
             }
         },
