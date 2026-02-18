@@ -246,25 +246,6 @@ impl ManifestStore {
         Ok(embedded)
     }
 
-    pub fn refresh(&self) -> Result<Manifest, AppError> {
-        let url = self.config.url.as_deref().unwrap_or(DEFAULT_MANIFEST_URL);
-        let public_key = self.resolve_public_key()?.ok_or_else(|| AppError::Config {
-            message: "manifest.public_key is required to update".to_string(),
-        })?;
-        let sig_url = self
-            .config
-            .sig_url
-            .clone()
-            .unwrap_or_else(|| format!("{url}.sig"));
-
-        let manifest_text = fetch_text(url)?;
-        let sig_text = fetch_text(&sig_url)?;
-        verify_signature(&public_key, manifest_text.as_bytes(), sig_text.trim())?;
-        let manifest = Manifest::parse(&manifest_text)?;
-        self.write_cache(&manifest_text, sig_text.trim(), &manifest)?;
-        Ok(manifest)
-    }
-
     fn ttl_hours(&self) -> u64 {
         self.config.ttl_hours.unwrap_or(DEFAULT_TTL_HOURS)
     }
@@ -698,17 +679,6 @@ name = "node"
         );
         assert_eq!(default_format(), "file");
         assert!(current_epoch_secs().expect("epoch") > 0);
-    }
-
-    #[test]
-    fn manifest_store_load_and_refresh_error_paths() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let store = ManifestStore::new(temp.path(), &ManifestConfig::default());
-        let loaded = store.load().expect("load manifest");
-        assert!(!loaded.tools.is_empty());
-
-        let err = store.refresh().expect_err("refresh requires key");
-        assert!(matches!(err, AppError::Config { .. }));
     }
 
     #[test]

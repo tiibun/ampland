@@ -25,9 +25,5 @@ xz2 = "0.1.7"
 zip = "0.6.6"
 
 [[bin]]
-name = "manifest-merge"
-path = "src/bin/manifest_merge.rs"
-
-[[bin]]
 name = "manifest-generate"
 path = "src/bin/manifest_generate/main.rs"

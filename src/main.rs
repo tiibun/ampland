@@ -309,18 +309,6 @@ fn run() -> Result<(), AppError> {
                 }
             }
         }
-        Command::UpdateManifest => {
-            let store = ManifestStore::new(&cache_root, &config.manifest);
-            let manifest = store.refresh()?;
-            if cli.json {
-                let mut output = BTreeMap::new();
-                output.insert("version", manifest.version.to_string());
-                output.insert("generated_at", manifest.generated_at);
-                println!("{}", serde_json::to_string_pretty(&output)?);
-            } else if !cli.quiet {
-                println!("manifest updated (version {})", manifest.version);
-            }
-        }
         Command::Activate => {
             if !cli.quiet {
                 let shell = detect_shell_kind();

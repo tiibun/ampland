@@ -73,8 +73,6 @@ pub enum Command {
     Which { tool: String },
     #[command(about = "Explain tool resolution")]
     Explain { tool: String },
-    #[command(about = "Update the manifest")]
-    UpdateManifest,
     #[command(about = "Print shell code to add shims to PATH")]
     Activate,
     #[command(about = "Manage shims")]
