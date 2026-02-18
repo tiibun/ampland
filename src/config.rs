@@ -43,13 +43,6 @@ pub struct ManifestConfig {
     pub ttl_hours: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LockFile {
-    pub path: String,
-    #[serde(default)]
-    pub tools: HashMap<String, String>,
-}
-
 impl Config {
     pub fn load(path_override: Option<&Path>) -> Result<(Self, PathBuf), AppError> {
         let path = match path_override {
@@ -123,33 +116,9 @@ impl Config {
     }
 }
 
-impl LockFile {
-    pub fn from_path_and_tools(path: &Path, tools: HashMap<String, String>) -> Self {
-        LockFile {
-            path: path.to_string_lossy().to_string(),
-            tools,
-        }
-    }
-
-    pub fn to_string(&self, format: crate::cli::Format) -> Result<String, AppError> {
-        match format {
-            crate::cli::Format::Toml => Ok(toml::to_string_pretty(self)?),
-            crate::cli::Format::Json => Ok(serde_json::to_string_pretty(self)?),
-        }
-    }
-
-    pub fn parse(contents: &str, format: crate::cli::Format) -> Result<Self, AppError> {
-        match format {
-            crate::cli::Format::Toml => Ok(toml::from_str(contents)?),
-            crate::cli::Format::Json => Ok(serde_json::from_str(contents)?),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::Format;
 
     fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
         entries
@@ -215,23 +184,6 @@ mod tests {
         assert!(versions.get("node").expect("node set").contains("22.0.0"));
         assert!(versions.get("bun").expect("bun set").contains("1.0.0"));
         assert!(versions.get("bun").expect("bun set").contains("1.1.0"));
-    }
-
-    #[test]
-    fn lockfile_serialization_roundtrip_for_both_formats() {
-        let lock = LockFile::from_path_and_tools(
-            Path::new("/tmp/work"),
-            map(&[("node", "22.0.0"), ("bun", "1.0.0")]),
-        );
-
-        let toml = lock.to_string(Format::Toml).expect("toml encode");
-        let decoded_toml = LockFile::parse(&toml, Format::Toml).expect("toml decode");
-        assert_eq!(decoded_toml.path, "/tmp/work");
-        assert_eq!(decoded_toml.tools.get("node"), Some(&"22.0.0".to_string()));
-
-        let json = lock.to_string(Format::Json).expect("json encode");
-        let decoded_json = LockFile::parse(&json, Format::Json).expect("json decode");
-        assert_eq!(decoded_json.tools.get("bun"), Some(&"1.0.0".to_string()));
     }
 
     #[test]

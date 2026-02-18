@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(name = "ampland", version, about = "Tool manager with native shims")]
@@ -50,23 +50,6 @@ pub enum Command {
     List,
     #[command(about = "Clean cache and unused data")]
     Gc,
-    #[command(about = "Export current settings")]
-    Export {
-        #[arg(long)]
-        path: Option<PathBuf>,
-        #[arg(long, value_enum, default_value = "toml")]
-        format: Format,
-        #[arg(long)]
-        output: Option<PathBuf>,
-    },
-    #[command(about = "Import settings from a file")]
-    Import {
-        #[arg(long)]
-        path: Option<PathBuf>,
-        #[arg(long, value_enum, default_value = "toml")]
-        format: Format,
-        file: PathBuf,
-    },
     #[command(about = "Check environment health")]
     Doctor,
     #[command(about = "Show resolved executable path")]
@@ -88,10 +71,4 @@ pub enum ShimCommand {
     Rebuild,
     #[command(about = "Add a shim for a tool")]
     Add { tool: String },
-}
-
-#[derive(Debug, Copy, Clone, ValueEnum)]
-pub enum Format {
-    Toml,
-    Json,
 }

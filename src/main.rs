@@ -10,7 +10,6 @@ mod resolve;
 mod shim;
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -18,13 +17,13 @@ use semver::Version;
 
 use crate::cache::Cache;
 use crate::cli::{Cli, Command, ShimCommand};
-use crate::config::{Config, LockFile, Scope};
+use crate::config::{Config, Scope};
 use crate::doctor::run_doctor;
 use crate::error::AppError;
 use crate::installer::install;
 use crate::manifest::{Manifest, ManifestStore, Target};
 use crate::paths::{cache_dir, normalize_path, shims_dir};
-use crate::resolve::{resolve_tool, resolve_tools, ResolutionSource};
+use crate::resolve::{resolve_tool, ResolutionSource};
 
 fn main() {
     if let Err(err) = run() {
@@ -212,40 +211,6 @@ fn run() -> Result<(), AppError> {
                 for path in removed {
                     println!("removed {}", path.display());
                 }
-            }
-        }
-        Command::Export {
-            path,
-            format,
-            output,
-        } => {
-            let cwd = resolve_path(cli.path, path)?;
-            let resolved = resolve_tools(&config, &cwd)?;
-            let lock = LockFile::from_path_and_tools(&cwd, resolved.tools);
-            let contents = lock.to_string(format)?;
-            if let Some(out_path) = output {
-                if let Some(parent) = out_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(out_path, contents)?;
-            } else if !cli.quiet {
-                println!("{contents}");
-            }
-        }
-        Command::Import { path, format, file } => {
-            let contents = fs::read_to_string(&file)?;
-            let mut lock = LockFile::parse(&contents, format)?;
-            let scope_path = if let Some(path) = path {
-                normalize_path(&path)?
-            } else {
-                normalize_path(Path::new(&lock.path))?
-            };
-            lock.path = normalize_scope_pattern(&scope_path);
-
-            upsert_scope(&mut config, &lock)?;
-            config.save(&config_path)?;
-            if !cli.quiet {
-                println!("imported scope {}", lock.path);
             }
         }
         Command::Doctor => {
@@ -489,24 +454,6 @@ fn resolve_latest_version(
     })
 }
 
-fn upsert_scope(config: &mut Config, lock: &LockFile) -> Result<(), AppError> {
-    let mut replaced = false;
-    for scope in &mut config.scopes {
-        if scope.pattern == lock.path {
-            scope.tools = lock.tools.clone();
-            replaced = true;
-            break;
-        }
-    }
-    if !replaced {
-        config.scopes.push(Scope {
-            pattern: lock.path.clone(),
-            tools: lock.tools.clone(),
-        });
-    }
-    Ok(())
-}
-
 fn upsert_scope_tool(config: &mut Config, pattern: &str, tool: &str, version: &str) {
     for scope in &mut config.scopes {
         if scope.pattern == pattern {
@@ -588,10 +535,9 @@ name = "node"
             },
             ..Default::default()
         };
-        let lock = LockFile::from_path_and_tools(Path::new("/tmp/work"), map(&[("node", "22")]));
-        upsert_scope(&mut config, &lock).expect("upsert scope");
-        assert_eq!(config.scopes.len(), 1);
+        upsert_scope_tool(&mut config, "/tmp/work", "node", "22");
         upsert_scope_tool(&mut config, "/tmp/work", "bun", "1.0.0");
+        assert_eq!(config.scopes.len(), 1);
         assert_eq!(
             config.scopes[0].tools.get("bun"),
             Some(&"1.0.0".to_string())

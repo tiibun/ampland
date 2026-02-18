@@ -212,24 +212,6 @@ Local publish script:
 MANIFEST_SIGNING_KEY="$(cat manifest_ed25519.pem)" ./scripts/publish-manifest.sh
 ```
 
-## Export and import
-
-Export the resolved tool versions for the current directory:
-
-```
-ampland export --path .
-```
-
-Import a previously exported file and bind it to a path scope:
-
-```
-ampland import --path /Users/toshi/work/ampland ./ampland.lock.toml
-```
-
-Suggested usage:
-- Commit an exported lock file for CI or team sharing (optional).
-- Keep `config.toml` as the source of truth for local rules.
-
 ## CLI
 
 ```
@@ -244,8 +226,6 @@ Core commands:
 - `ampland list`
 - `ampland gc`
 - `ampland update-manifest`
-- `ampland export --path <dir> [--format toml|json]`
-- `ampland import --path <dir> <file>`
 - `ampland doctor`
 - `ampland which <tool>`
 - `ampland explain <tool>`
@@ -253,7 +233,6 @@ Core commands:
 
 Common flags:
 - `--path <dir>`: resolve versions as if the current directory were `<dir>`.
-- `--format <toml|json>`: output format for `export`.
 - `--json`: print machine-readable output where available.
 - `--quiet`: only print errors.
 - `--verbose`: print resolution and install details.
@@ -282,5 +261,4 @@ chain used to decide a version.
 
 - PATH order matters. Put `~/.local/ampland/shims` early in PATH and avoid
 	conflicts with other managers (asdf, mise, pyenv, etc.).
-- Use a lock file or export/import flow for reproducible builds in CI.
 - Use file locks during install to avoid concurrent writes to the cache.
