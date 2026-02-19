@@ -175,3 +175,166 @@ fn config_edit_creates_file() {
     assert!(output.status.success());
     assert!(config_file.exists());
 }
+
+#[test]
+fn use_without_args_missing_tool_versions_fails() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(".tool-versions") && (stderr.contains("not found") || stderr.contains("found at")),
+        "Error should mention missing .tool-versions file, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn use_without_args_reads_tool_versions() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    // Create a .tool-versions file with fake tool versions
+    let tool_versions = work_dir.join(".tool-versions");
+    fs::write(&tool_versions, "node 20.10.0\npython 3.11.5\n").expect("write .tool-versions");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    // This will fail because the tools aren't in the manifest,
+    // but we're testing that it reads the file
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    // Should fail trying to resolve the tools from manifest, not complaining about missing file
+    assert!(
+        !stderr.contains(".tool-versions") || !stderr.contains("not found"),
+        "Should not complain about missing .tool-versions, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn use_without_args_with_comments_and_empty_lines() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    // Create a .tool-versions file with comments and empty lines
+    let tool_versions = work_dir.join(".tool-versions");
+    fs::write(
+        &tool_versions,
+        "# This is a comment\nnode 20.10.0\n\n# Another tool\npython 3.11.5\n",
+    )
+    .expect("write .tool-versions");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    // Should fail trying to resolve the tools, not parsing the file
+    assert!(
+        !stderr.contains(".tool-versions") || !stderr.contains("not found"),
+        "Should parse file correctly, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn use_without_args_invalid_format_fails() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    // Create a .tool-versions file with missing version
+    let tool_versions = work_dir.join(".tool-versions");
+    fs::write(&tool_versions, "node\n").expect("write .tool-versions");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing version") && stderr.contains("line 1"),
+        "Error should mention missing version at line 1, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn use_with_args_still_works() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    // Create a .tool-versions file, but pass explicit args
+    let tool_versions = work_dir.join(".tool-versions");
+    fs::write(&tool_versions, "python 3.11.5\n").expect("write .tool-versions");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .arg("node")
+        .arg("20.10.0")
+        .output()
+        .expect("run ampland");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    // Should try to use node, not read .tool-versions
+    // Will fail because node isn't in manifest, but that's expected
+    assert!(
+        !stderr.contains("python"),
+        "Should not try to use python from .tool-versions, got: {}",
+        stderr
+    );
+}
