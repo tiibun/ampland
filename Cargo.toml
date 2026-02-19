@@ -3,6 +3,10 @@ name = "ampland"
 version = "0.1.0"
 edition = "2021"
 default-run = "ampland"
+description = "A fast, deterministic tool manager with native shims."
+license = "MIT"
+repository = "https://github.com/tiibun/ampland"
+homepage = "https://github.com/tiibun/ampland"
 
 [dependencies]
 clap = { version = "4.5.3", features = ["derive"] }
