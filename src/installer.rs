@@ -20,14 +20,11 @@ pub fn install(
     package: &ResolvedPackage,
 ) -> Result<PathBuf, AppError> {
     cache.with_lock(|| {
-        let install_path = primary_bin_path(cache, tool, version, &package.bin_paths);
-        if install_path.exists() {
-            return Ok(install_path);
-        }
-
         let version_dir = cache.tool_version_dir(tool, version);
         let tmp_dir = TempDir::new_in(cache.root())?;
         let archive_path = tmp_dir.path().join("archive");
+
+        // アーカイブをダウンロード
         let size = download(&package.url, &archive_path, &package.sha256)?;
         if let Some(expected) = package.size {
             if expected != size {
@@ -39,7 +36,8 @@ pub fn install(
 
         fs::create_dir_all(&version_dir)?;
 
-        match package.format {
+        // アーカイブを展開・正規化して最終的なbin_pathsを取得
+        let final_bin_paths = match package.format {
             PackageFormat::File => {
                 if package.bin_paths.len() > 1 {
                     return Err(AppError::Cache {
@@ -49,31 +47,37 @@ pub fn install(
                 let target = if let Some(path) = package.bin_paths.first() {
                     version_dir.join(path)
                 } else {
-                    install_path.clone()
+                    primary_bin_path(cache, tool, version, &package.bin_paths)
                 };
                 if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent)?;
                 }
                 fs::copy(&archive_path, &target)?;
                 make_executable(&target)?;
+                package.bin_paths.clone()
             }
             PackageFormat::TarGz => {
                 unpack_tar_gz(&archive_path, &version_dir)?;
                 let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
                 finalize_unpacked_bins(&version_dir, &bin_paths, "tar.gz")?;
+                bin_paths
             }
             PackageFormat::TarXz => {
                 unpack_tar_xz(&archive_path, &version_dir)?;
                 let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
                 finalize_unpacked_bins(&version_dir, &bin_paths, "tar.xz")?;
+                bin_paths
             }
             PackageFormat::Zip => {
                 unpack_zip(&archive_path, &version_dir)?;
                 let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
                 finalize_unpacked_bins(&version_dir, &bin_paths, "zip")?;
+                bin_paths
             }
-        }
-        Ok(install_path)
+        };
+
+        let final_install_path = primary_bin_path(cache, tool, version, &final_bin_paths);
+        Ok(final_install_path)
     })
 }
 
