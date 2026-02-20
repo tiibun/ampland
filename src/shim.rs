@@ -263,13 +263,17 @@ fn resolve_bin_for_tool(
         None => return Ok(None),
     };
 
-    if !path.exists() {
-        return Err(AppError::ToolNotInstalled {
-            tool: tool.to_string(),
-        });
+    if path.exists() {
+        return Ok(Some(BinResolution { path }));
     }
 
-    Ok(Some(BinResolution { path }))
+    if let Some(path) = runtime_bin_path_for_name(cache, tool, version, bin_name)? {
+        return Ok(Some(BinResolution { path }));
+    }
+
+    Err(AppError::ToolNotInstalled {
+        tool: tool.to_string(),
+    })
 }
 
 fn runtime_bin_path_for_name(
@@ -320,10 +324,7 @@ fn list_runtime_bin_names(
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
+            if let Some(stem) = runtime_bin_stem(&path)? {
                 names.insert(stem.to_string());
             }
         }
@@ -339,15 +340,52 @@ fn find_runtime_bin(version_dir: &Path, bin_name: &str) -> Result<Option<PathBuf
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if path.file_stem().and_then(|value| value.to_str()) == Some(bin_name) {
+            if runtime_bin_stem(&path)?.as_deref() == Some(bin_name) {
                 return Ok(Some(path));
             }
         }
     }
     Ok(None)
+}
+
+fn runtime_bin_stem(path: &Path) -> Result<Option<String>, AppError> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    if !is_runtime_executable(path)? {
+        return Ok(None);
+    }
+    Ok(path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_string()))
+}
+
+fn is_runtime_executable(path: &Path) -> Result<bool, AppError> {
+    #[cfg(windows)]
+    {
+        let ext = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase());
+        return Ok(matches!(
+            ext.as_deref(),
+            Some("exe" | "cmd" | "bat" | "com" | "ps1")
+        ));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(path)?.permissions().mode();
+        return Ok((mode & 0o111) != 0);
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        Ok(true)
+    }
 }
 
 fn candidate_bin_dirs(version_dir: &Path) -> Vec<PathBuf> {
@@ -417,6 +455,16 @@ fn shim_path_for(root: &Path, tool: &str) -> PathBuf {
 mod tests {
     use super::*;
     use crate::config::{Global, Scope};
+
+    fn mark_executable(path: &Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(path).expect("meta").permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(path, perms).expect("chmod");
+        }
+    }
 
     fn map(entries: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
         entries
@@ -558,6 +606,8 @@ name = "node"
         fs::create_dir_all(&bin_dir).expect("mkdir");
         fs::write(bin_dir.join("node"), b"node").expect("write node");
         fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
+        mark_executable(&bin_dir.join("node"));
+        mark_executable(&bin_dir.join("pnpm"));
 
         let created = sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
             .expect("sync shims");
@@ -582,6 +632,8 @@ name = "node"
         fs::create_dir_all(&bin_dir).expect("mkdir");
         fs::write(bin_dir.join("node"), b"node").expect("write node");
         fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
+        mark_executable(&bin_dir.join("node"));
+        mark_executable(&bin_dir.join("pnpm"));
         sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
             .expect("initial sync");
         let unmanaged = shim_path_for(&shims, "python");
@@ -594,6 +646,98 @@ name = "node"
         assert!(shim_path_for(&shims, "node").exists());
         assert!(!shim_path_for(&shims, "pnpm").exists());
         assert!(unmanaged.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_runtime_shims_ignores_non_executable_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().join("cache"));
+        let shims = temp.path().join("shims");
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "24.3.1")]),
+            },
+            ..Default::default()
+        };
+
+        let version_dir = cache.tool_version_dir("node", "24.3.1");
+        fs::create_dir_all(&version_dir).expect("mkdir");
+
+        let node_bin = version_dir.join("node");
+        fs::write(&node_bin, b"node").expect("write node");
+        let mut node_perms = fs::metadata(&node_bin).expect("meta node").permissions();
+        node_perms.set_mode(0o755);
+        fs::set_permissions(&node_bin, node_perms).expect("chmod node");
+
+        let readme = version_dir.join("README");
+        fs::write(&readme, b"docs").expect("write readme");
+        let mut readme_perms = fs::metadata(&readme).expect("meta readme").permissions();
+        readme_perms.set_mode(0o644);
+        fs::set_permissions(&readme, readme_perms).expect("chmod readme");
+
+        sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
+            .expect("sync shims");
+
+        assert!(shim_path_for(&shims, "node").exists());
+        assert!(!shim_path_for(&shims, "README").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_bin_path_falls_back_to_runtime_when_manifest_path_is_missing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "22.22.0")]),
+            },
+            ..Default::default()
+        };
+        let manifest = Manifest::parse(
+            r#"
+version = 1
+generated_at = "2026-02-11T00:00:00Z"
+
+[[tool]]
+name = "node"
+  [[tool.version]]
+  ver = "22.22.0"
+  platform = "windows"
+  arch = "x64"
+  url = "https://example.com/node"
+  sha256 = "deadbeef"
+  bin_paths = ["node-v22.22.0-win-x64/node.exe"]
+"#,
+        )
+        .expect("manifest");
+        let target = Target {
+            platform: "windows".to_string(),
+            arch: "x64".to_string(),
+        };
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+
+        let runtime_node = cache.tool_version_dir("node", "22.22.0").join("node.exe");
+        fs::create_dir_all(runtime_node.parent().expect("parent")).expect("mkdir");
+        fs::write(&runtime_node, b"node").expect("write");
+        let mut perms = fs::metadata(&runtime_node).expect("meta").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&runtime_node, perms).expect("chmod");
+
+        let resolved = resolve_bin_path(
+            &config,
+            Path::new("workspace"),
+            "node",
+            &cache,
+            &manifest,
+            &target,
+        )
+        .expect("resolve runtime fallback");
+
+        assert_eq!(resolved.path, runtime_node);
     }
 
     #[test]
@@ -663,6 +807,7 @@ name = "node"
             .join("tsc");
         fs::create_dir_all(tsc_bin.parent().expect("parent")).expect("mkdir");
         fs::write(&tsc_bin, b"x").expect("write");
+        mark_executable(&tsc_bin);
 
         let resolved = resolve_bin_path(
             &config,
