@@ -160,12 +160,14 @@ fn run() -> Result<(), AppError> {
             };
             let cwd = resolve_path(cli.path.clone(), None)?;
             let mut usages = config.is_tool_version_in_use(&tool, &version);
+            let mut removed_from_current_scope = false;
             if !usages.is_empty() {
                 if let Ok(resolution) = resolve_tool(&config, &cwd, &tool) {
                     if let ResolutionSource::Scope { pattern } = resolution.source {
                         if resolution.version == version
                             && config.remove_tool_version_from_scope(&pattern, &tool, &version)?
                         {
+                            removed_from_current_scope = true;
                             config.save(&config_path)?;
                             usages = config.is_tool_version_in_use(&tool, &version);
                         }
@@ -173,6 +175,14 @@ fn run() -> Result<(), AppError> {
                 }
             }
             if !usages.is_empty() {
+                if removed_from_current_scope {
+                    if !cli.quiet {
+                        println!(
+                            "removed config for {tool}@{version}; still used elsewhere, cache kept"
+                        );
+                    }
+                    return Ok(());
+                }
                 return Err(AppError::Config {
                     message: format!(
                         "{tool}@{version} is still in use. Configurations found in: {}",
