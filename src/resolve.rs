@@ -77,12 +77,12 @@ pub fn resolve_tool(config: &Config, cwd: &Path, tool: &str) -> Result<Resolutio
 }
 
 fn select_scope(config: &Config, cwd: &Path) -> Result<Option<ScopeMatch>, AppError> {
-    let cwd_str = cwd.to_string_lossy();
+    let cwd_str = normalize_separators(cwd.to_string_lossy().as_ref());
     let mut best: Option<(usize, String)> = None;
     let mut best_scope: Option<Scope> = None;
 
     for scope in config.normalized_scopes()? {
-        if scope_matches(&scope.pattern, cwd_str.as_ref())? {
+        if scope_matches(&scope.pattern, &cwd_str)? {
             let score = scope.pattern.len();
             match &best {
                 Some((best_score, _)) if *best_score >= score => {}
@@ -101,7 +101,8 @@ fn select_scope(config: &Config, cwd: &Path) -> Result<Option<ScopeMatch>, AppEr
 }
 
 fn scope_matches(pattern: &str, cwd: &str) -> Result<bool, AppError> {
-    let glob = Glob::new(pattern).map_err(|err| AppError::Config {
+    let normalized_pattern = normalize_separators(pattern);
+    let glob = Glob::new(&normalized_pattern).map_err(|err| AppError::Config {
         message: format!("invalid scope glob '{pattern}': {err}"),
     })?;
     let matcher = glob.compile_matcher();
@@ -109,11 +110,15 @@ fn scope_matches(pattern: &str, cwd: &str) -> Result<bool, AppError> {
         return Ok(true);
     }
 
-    let prefix = pattern.strip_suffix("/**");
+    let prefix = normalized_pattern.strip_suffix("/**");
     Ok(match prefix {
         Some(prefix) => cwd == prefix,
         None => false,
     })
+}
+
+fn normalize_separators(path: &str) -> String {
+    path.replace('\\', "/")
 }
 
 #[cfg(test)]
@@ -216,5 +221,47 @@ mod tests {
         let config = Config::default();
         let err = resolve_tool(&config, Path::new("workspace"), "node").expect_err("missing");
         assert!(matches!(err, AppError::Config { .. }));
+    }
+
+    #[test]
+    fn matches_scope_when_cwd_uses_windows_separators() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.11.0")]),
+            },
+            scopes: vec![Scope {
+                pattern: "C:/workspace/**".to_string(),
+                tools: map(&[("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+
+        let resolved = resolve_tool(&config, Path::new(r"C:\workspace\project"), "node").unwrap();
+        assert_eq!(resolved.version, "22.0.0");
+        assert!(matches!(
+            resolved.source,
+            ResolutionSource::Scope { pattern } if pattern == "C:/workspace/**"
+        ));
+    }
+
+    #[test]
+    fn matches_scope_when_pattern_uses_windows_separators() {
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "20.11.0")]),
+            },
+            scopes: vec![Scope {
+                pattern: r"C:\workspace\**".to_string(),
+                tools: map(&[("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+
+        let resolved = resolve_tool(&config, Path::new("C:/workspace/project"), "node").unwrap();
+        assert_eq!(resolved.version, "22.0.0");
+        assert!(matches!(
+            resolved.source,
+            ResolutionSource::Scope { pattern } if pattern == r"C:\workspace\**"
+        ));
     }
 }

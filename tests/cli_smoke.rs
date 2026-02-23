@@ -177,6 +177,42 @@ fn config_edit_creates_file() {
 }
 
 #[test]
+fn doctor_uses_overridden_paths() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("custom-cache");
+    let shims = temp.path().join("custom-shims");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("--shims-dir")
+        .arg(&shims)
+        .arg("--json")
+        .arg("doctor")
+        .output()
+        .expect("run ampland");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("parse json");
+    assert_eq!(
+        json.get("config_path").and_then(|v| v.as_str()),
+        config.to_str()
+    );
+    assert_eq!(
+        json.get("cache_root").and_then(|v| v.as_str()),
+        cache.to_str()
+    );
+    assert_eq!(
+        json.get("shims_root").and_then(|v| v.as_str()),
+        shims.to_str()
+    );
+}
+
+#[test]
 fn use_without_args_missing_tool_versions_fails() {
     let temp = tempfile::tempdir().expect("tempdir");
     let config = temp.path().join("config.toml");
@@ -197,7 +233,8 @@ fn use_without_args_missing_tool_versions_fails() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains(".tool-versions") && (stderr.contains("not found") || stderr.contains("found at")),
+        stderr.contains(".tool-versions")
+            && (stderr.contains("not found") || stderr.contains("found at")),
         "Error should mention missing .tool-versions file, got: {}",
         stderr
     );
@@ -228,7 +265,7 @@ fn use_without_args_reads_tool_versions() {
     // This will fail because the tools aren't in the manifest,
     // but we're testing that it reads the file
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Should fail trying to resolve the tools from manifest, not complaining about missing file
     assert!(
         !stderr.contains(".tool-versions") || !stderr.contains("not found"),
@@ -264,7 +301,7 @@ fn use_without_args_with_comments_and_empty_lines() {
         .expect("run ampland");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Should fail trying to resolve the tools, not parsing the file
     assert!(
         !stderr.contains(".tool-versions") || !stderr.contains("not found"),
@@ -329,7 +366,7 @@ fn use_with_args_still_works() {
         .expect("run ampland");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Should try to use node, not read .tool-versions
     // Will fail because node isn't in manifest, but that's expected
     assert!(

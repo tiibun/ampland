@@ -5,6 +5,8 @@ use fs2::FileExt;
 
 use crate::error::AppError;
 
+pub(crate) const INSTALL_MARKER_FILE: &str = ".installed";
+
 pub struct Cache {
     root: PathBuf,
 }
@@ -32,12 +34,10 @@ impl Cache {
 
     pub fn is_installed(&self, tool: &str, version: &str) -> bool {
         let dir = self.tool_version_dir(tool, version);
-        if !dir.exists() {
+        if !dir.is_dir() {
             return false;
         }
-        fs::read_dir(&dir)
-            .map(|mut entries| entries.next().is_some())
-            .unwrap_or(false)
+        dir.join(INSTALL_MARKER_FILE).is_file()
     }
 
     pub fn with_lock<T, F: FnOnce() -> Result<T, AppError>>(&self, f: F) -> Result<T, AppError> {
@@ -140,6 +140,14 @@ mod tests {
         let bin = cache.tool_bin_path("node", "22");
         fs::create_dir_all(bin.parent().expect("parent")).expect("mkdir");
         fs::write(&bin, b"bin").expect("write");
+        assert!(!cache.is_installed("node", "22"));
+        fs::write(
+            cache
+                .tool_version_dir("node", "22")
+                .join(INSTALL_MARKER_FILE),
+            b"ok",
+        )
+        .expect("write marker");
         assert!(cache.is_installed("node", "22"));
     }
 

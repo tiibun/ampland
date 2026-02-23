@@ -7,7 +7,6 @@ use crate::cache::Cache;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::manifest::{ManifestStore, Target};
-use crate::paths::{cache_dir, config_path, shims_dir};
 use crate::resolve::resolve_tools;
 use crate::shim::list_shim_names;
 
@@ -21,17 +20,20 @@ pub struct DoctorReport {
     pub missing_installs: Vec<String>,
 }
 
-pub fn run_doctor(config: &Config, cwd: &Path) -> Result<DoctorReport, AppError> {
-    let config_path = config_path()?;
-    let cache_root = cache_dir()?;
-    let shims_root = shims_dir()?;
+pub fn run_doctor(
+    config: &Config,
+    cwd: &Path,
+    config_path: &Path,
+    cache_root: &Path,
+    shims_root: &Path,
+) -> Result<DoctorReport, AppError> {
     let shims_in_path = path_contains(&shims_root);
-    let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+    let manifest = ManifestStore::new(cache_root, &config.manifest).load()?;
     let target = Target::current()?;
     let shim_names = list_shim_names(config, &manifest, &target);
     let conflicts = detect_conflicts(&shims_root, &shim_names);
 
-    let cache = Cache::new(cache_root.clone());
+    let cache = Cache::new(cache_root.to_path_buf());
     let resolve = resolve_tools(config, cwd)?;
     let mut missing_installs = Vec::new();
     for (tool, version) in resolve.tools {
@@ -42,9 +44,9 @@ pub fn run_doctor(config: &Config, cwd: &Path) -> Result<DoctorReport, AppError>
     missing_installs.sort();
 
     Ok(DoctorReport {
-        config_path,
-        cache_root,
-        shims_root,
+        config_path: config_path.to_path_buf(),
+        cache_root: cache_root.to_path_buf(),
+        shims_root: shims_root.to_path_buf(),
         shims_in_path,
         conflicts,
         missing_installs,
@@ -119,9 +121,16 @@ mod tests {
 
     #[test]
     fn run_doctor_smoke_with_empty_config() {
+        let temp = tempfile::tempdir().expect("tempdir");
         let config = Config::default();
         let cwd = std::env::current_dir().expect("cwd");
-        let report = run_doctor(&config, &cwd).expect("doctor");
-        assert!(report.config_path.ends_with("ampland/config.toml"));
+        let config_path = temp.path().join("config.toml");
+        let cache_root = temp.path().join("cache");
+        let shims_root = temp.path().join("shims");
+        let report =
+            run_doctor(&config, &cwd, &config_path, &cache_root, &shims_root).expect("doctor");
+        assert_eq!(report.config_path, config_path);
+        assert_eq!(report.cache_root, cache_root);
+        assert_eq!(report.shims_root, shims_root);
     }
 }

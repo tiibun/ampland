@@ -9,7 +9,7 @@ use tempfile::TempDir;
 use xz2::read::XzDecoder;
 use zip::ZipArchive;
 
-use crate::cache::Cache;
+use crate::cache::{Cache, INSTALL_MARKER_FILE};
 use crate::error::AppError;
 use crate::manifest::{PackageFormat, ResolvedPackage};
 
@@ -21,8 +21,12 @@ pub fn install(
 ) -> Result<PathBuf, AppError> {
     cache.with_lock(|| {
         let version_dir = cache.tool_version_dir(tool, version);
+        let tool_dir = cache.root().join(tool);
+        fs::create_dir_all(&tool_dir)?;
         let tmp_dir = TempDir::new_in(cache.root())?;
         let archive_path = tmp_dir.path().join("archive");
+        let staged_parent = TempDir::new_in(&tool_dir)?;
+        let staged_version_dir = staged_parent.path().join(version);
 
         // アーカイブをダウンロード
         let size = download(&package.url, &archive_path, &package.sha256)?;
@@ -34,7 +38,7 @@ pub fn install(
             }
         }
 
-        fs::create_dir_all(&version_dir)?;
+        fs::create_dir_all(&staged_version_dir)?;
 
         // アーカイブを展開・正規化して最終的なbin_pathsを取得
         let final_bin_paths = match package.format {
@@ -45,9 +49,9 @@ pub fn install(
                     });
                 }
                 let target = if let Some(path) = package.bin_paths.first() {
-                    version_dir.join(path)
+                    staged_version_dir.join(path)
                 } else {
-                    primary_bin_path(cache, tool, version, &package.bin_paths)
+                    primary_bin_path_for_dir(&staged_version_dir, tool, &package.bin_paths)
                 };
                 if let Some(parent) = target.parent() {
                     fs::create_dir_all(parent)?;
@@ -57,24 +61,30 @@ pub fn install(
                 package.bin_paths.clone()
             }
             PackageFormat::TarGz => {
-                unpack_tar_gz(&archive_path, &version_dir)?;
-                let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
-                finalize_unpacked_bins(&version_dir, &bin_paths, "tar.gz")?;
+                unpack_tar_gz(&archive_path, &staged_version_dir)?;
+                let bin_paths = normalize_unpacked_layout(&staged_version_dir, &package.bin_paths)?;
+                finalize_unpacked_bins(&staged_version_dir, &bin_paths, "tar.gz")?;
                 bin_paths
             }
             PackageFormat::TarXz => {
-                unpack_tar_xz(&archive_path, &version_dir)?;
-                let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
-                finalize_unpacked_bins(&version_dir, &bin_paths, "tar.xz")?;
+                unpack_tar_xz(&archive_path, &staged_version_dir)?;
+                let bin_paths = normalize_unpacked_layout(&staged_version_dir, &package.bin_paths)?;
+                finalize_unpacked_bins(&staged_version_dir, &bin_paths, "tar.xz")?;
                 bin_paths
             }
             PackageFormat::Zip => {
-                unpack_zip(&archive_path, &version_dir)?;
-                let bin_paths = normalize_unpacked_layout(&version_dir, &package.bin_paths)?;
-                finalize_unpacked_bins(&version_dir, &bin_paths, "zip")?;
+                unpack_zip(&archive_path, &staged_version_dir)?;
+                let bin_paths = normalize_unpacked_layout(&staged_version_dir, &package.bin_paths)?;
+                finalize_unpacked_bins(&staged_version_dir, &bin_paths, "zip")?;
                 bin_paths
             }
         };
+
+        fs::write(staged_version_dir.join(INSTALL_MARKER_FILE), b"ok")?;
+        if version_dir.exists() {
+            fs::remove_dir_all(&version_dir)?;
+        }
+        fs::rename(&staged_version_dir, &version_dir)?;
 
         let final_install_path = primary_bin_path(cache, tool, version, &final_bin_paths);
         Ok(final_install_path)
@@ -142,13 +152,21 @@ fn normalize_unpacked_layout(
 
 fn primary_bin_path(cache: &Cache, tool: &str, version: &str, bin_paths: &[String]) -> PathBuf {
     let version_dir = cache.tool_version_dir(tool, version);
+    primary_bin_path_for_dir(&version_dir, tool, bin_paths)
+}
+
+fn primary_bin_path_for_dir(version_dir: &Path, tool: &str, bin_paths: &[String]) -> PathBuf {
     if let Some(bin_path) = find_bin_path(tool, bin_paths) {
         return version_dir.join(bin_path);
     }
     if let Some(first) = bin_paths.first() {
         return version_dir.join(first);
     }
-    cache.tool_bin_path(tool, version)
+    let mut name = tool.to_string();
+    if cfg!(windows) {
+        name.push_str(".exe");
+    }
+    version_dir.join(name)
 }
 
 fn find_bin_path<'a>(bin_name: &str, bin_paths: &'a [String]) -> Option<&'a str> {
@@ -374,6 +392,7 @@ mod tests {
 
         let bin = install(&cache, "toolx", "1.0.0", &package).expect("install");
         assert!(bin.exists());
+        assert!(cache.is_installed("toolx", "1.0.0"));
         handle.join().expect("server join");
     }
 }

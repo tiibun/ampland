@@ -297,7 +297,6 @@ Core commands:
 - `ampland search [query]`
 - `ampland list`
 - `ampland gc`
-- `ampland update-manifest`
 - `ampland doctor`
 - `ampland which <tool>`
 - `ampland explain <tool>`

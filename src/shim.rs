@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +15,7 @@ const MANAGED_SHIMS_FILE: &str = ".ampland-managed-shims";
 
 pub fn rebuild_shims(
     config: &Config,
+    cache_root: &Path,
     shims_override: Option<&Path>,
 ) -> Result<Vec<PathBuf>, AppError> {
     let shims_root = match shims_override {
@@ -23,34 +24,22 @@ pub fn rebuild_shims(
     };
     fs::create_dir_all(&shims_root)?;
 
-    let cache_root = cache_dir()?;
-    let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+    let manifest = ManifestStore::new(cache_root, &config.manifest).load()?;
     let target = Target::current()?;
     let shim_names = list_shim_names(config, &manifest, &target);
-    let expected_names: HashSet<String> = shim_names
+    let expected_names: BTreeSet<String> = shim_names.iter().cloned().collect();
+    let mut managed = load_managed_shims(&shims_root)?;
+    for stale in managed
         .iter()
-        .map(|name| {
-            if cfg!(windows) {
-                format!("{name}.exe")
-            } else {
-                name.clone()
-            }
-        })
-        .collect();
-
-    for entry in fs::read_dir(&shims_root)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name == MANAGED_SHIMS_FILE {
-            continue;
-        }
-        if !expected_names.contains(&name) {
+        .filter(|name| !expected_names.contains(*name))
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        let path = shim_path_for(&shims_root, &stale);
+        if path.exists() {
             fs::remove_file(path)?;
         }
+        managed.remove(&stale);
     }
 
     let mut created = Vec::new();
@@ -60,6 +49,8 @@ pub fn rebuild_shims(
         fs::copy(&exe, &shim_path)?;
         created.push(shim_path);
     }
+    managed = expected_names;
+    save_managed_shims(&shims_root, &managed)?;
 
     Ok(created)
 }
@@ -574,21 +565,25 @@ name = "node"
     fn rebuild_shims_with_empty_config_returns_ok() {
         let temp = tempfile::tempdir().expect("tempdir");
         let config = Config::default();
-        let created = rebuild_shims(&config, Some(temp.path())).expect("rebuild");
+        let created = rebuild_shims(&config, temp.path(), Some(temp.path())).expect("rebuild");
         assert!(created.is_empty());
     }
 
     #[test]
-    fn rebuild_shims_prunes_stale_files_with_empty_config() {
+    fn rebuild_shims_prunes_only_managed_entries_with_empty_config() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let stale_name = if cfg!(windows) { "node.exe" } else { "node" };
-        let stale_path = temp.path().join(stale_name);
+        let stale_path = shim_path_for(temp.path(), "node");
+        let unmanaged_path = shim_path_for(temp.path(), "python");
         fs::write(&stale_path, b"shim").expect("write stale shim");
+        fs::write(&unmanaged_path, b"user").expect("write unmanaged shim");
+        let managed = BTreeSet::from([String::from("node")]);
+        save_managed_shims(temp.path(), &managed).expect("save managed");
         let config = Config::default();
 
-        let created = rebuild_shims(&config, Some(temp.path())).expect("rebuild");
+        let created = rebuild_shims(&config, temp.path(), Some(temp.path())).expect("rebuild");
         assert!(created.is_empty());
         assert!(!stale_path.exists());
+        assert!(unmanaged_path.exists());
     }
 
     #[test]

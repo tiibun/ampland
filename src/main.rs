@@ -98,15 +98,14 @@ fn run() -> Result<(), AppError> {
                 }
 
                 if !cache.is_installed(&tool, &version) {
-                    let package =
-                        manifest
-                            .resolve(&tool, &version, &target)
-                            .ok_or_else(|| AppError::Cache {
-                                message: format!(
-                                    "no installer for {tool}@{version} ({}/{})",
-                                    target.platform, target.arch
-                                ),
-                            })?;
+                    let package = manifest.resolve(&tool, &version, &target).ok_or_else(|| {
+                        AppError::Cache {
+                            message: format!(
+                                "no installer for {tool}@{version} ({}/{})",
+                                target.platform, target.arch
+                            ),
+                        }
+                    })?;
                     let bin_path = install(&cache, &tool, &version, &package)?;
                     if !cli.quiet {
                         println!("installed {tool}@{version} -> {}", bin_path.display());
@@ -116,7 +115,7 @@ fn run() -> Result<(), AppError> {
             }
 
             config.save(&config_path)?;
-            shim::rebuild_shims(&config, cli.shims_dir.as_deref())?;
+            shim::rebuild_shims(&config, &cache_root, cli.shims_dir.as_deref())?;
 
             if !cli.quiet {
                 for (tool, version) in installed_tools {
@@ -171,7 +170,7 @@ fn run() -> Result<(), AppError> {
             cache.uninstall(&tool, &version)?;
             let tool_still_configured = config.all_tool_versions().contains_key(&tool);
             if !tool_still_configured {
-                shim::rebuild_shims(&config, cli.shims_dir.as_deref())?;
+                shim::rebuild_shims(&config, &cache_root, cli.shims_dir.as_deref())?;
             }
             if !cli.quiet {
                 println!("removed {tool}@{version}");
@@ -243,7 +242,7 @@ fn run() -> Result<(), AppError> {
         }
         Command::Doctor => {
             let cwd = resolve_path(cli.path, None)?;
-            let report = run_doctor(&config, &cwd)?;
+            let report = run_doctor(&config, &cwd, &config_path, &cache_root, &shims_root)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else if !cli.quiet {
@@ -325,7 +324,7 @@ fn run() -> Result<(), AppError> {
         }
         Command::Shim { command } => match command {
             ShimCommand::Rebuild => {
-                let created = shim::rebuild_shims(&config, cli.shims_dir.as_deref())?;
+                let created = shim::rebuild_shims(&config, &cache_root, cli.shims_dir.as_deref())?;
                 if !cli.quiet {
                     for path in created {
                         println!("shimmed {}", path.display());
@@ -667,13 +666,13 @@ name = "node"
     fn parse_tool_versions_file_valid() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let tool_versions_path = temp_dir.path().join(".tool-versions");
-        
+
         std::fs::write(
             &tool_versions_path,
             "node 20.10.0\npython 3.11.5\ngo 1.21.0\n",
         )
         .expect("write file");
-        
+
         let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
         assert_eq!(result.len(), 3);
         assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
@@ -685,13 +684,13 @@ name = "node"
     fn parse_tool_versions_file_with_comments_and_empty_lines() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let tool_versions_path = temp_dir.path().join(".tool-versions");
-        
+
         std::fs::write(
             &tool_versions_path,
             "# This is a comment\nnode 20.10.0\n\n# Another comment\npython 3.11.5\n\n",
         )
         .expect("write file");
-        
+
         let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
@@ -702,13 +701,13 @@ name = "node"
     fn parse_tool_versions_file_with_extra_whitespace() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let tool_versions_path = temp_dir.path().join(".tool-versions");
-        
+
         std::fs::write(
             &tool_versions_path,
             "  node   20.10.0  \n  python   3.11.5  \n",
         )
         .expect("write file");
-        
+
         let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
@@ -719,9 +718,9 @@ name = "node"
     fn parse_tool_versions_file_missing_version() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let tool_versions_path = temp_dir.path().join(".tool-versions");
-        
+
         std::fs::write(&tool_versions_path, "node\n").expect("write file");
-        
+
         let result = parse_tool_versions_file(&tool_versions_path);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -733,7 +732,7 @@ name = "node"
     fn parse_tool_versions_file_not_found() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let tool_versions_path = temp_dir.path().join("nonexistent.tool-versions");
-        
+
         let result = parse_tool_versions_file(&tool_versions_path);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -744,9 +743,9 @@ name = "node"
     fn parse_tool_versions_file_empty() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let tool_versions_path = temp_dir.path().join(".tool-versions");
-        
+
         std::fs::write(&tool_versions_path, "").expect("write file");
-        
+
         let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
         assert_eq!(result.len(), 0);
     }
@@ -755,9 +754,9 @@ name = "node"
     fn parse_tool_versions_file_only_comments() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let tool_versions_path = temp_dir.path().join(".tool-versions");
-        
+
         std::fs::write(&tool_versions_path, "# comment 1\n# comment 2\n").expect("write file");
-        
+
         let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
         assert_eq!(result.len(), 0);
     }
