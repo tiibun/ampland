@@ -158,7 +158,20 @@ fn run() -> Result<(), AppError> {
                             .to_string(),
                 });
             };
-            let usages = config.is_tool_version_in_use(&tool, &version);
+            let cwd = resolve_path(cli.path.clone(), None)?;
+            let mut usages = config.is_tool_version_in_use(&tool, &version);
+            if !usages.is_empty() {
+                if let Ok(resolution) = resolve_tool(&config, &cwd, &tool) {
+                    if let ResolutionSource::Scope { pattern } = resolution.source {
+                        if resolution.version == version
+                            && config.remove_tool_version_from_scope(&pattern, &tool, &version)?
+                        {
+                            config.save(&config_path)?;
+                            usages = config.is_tool_version_in_use(&tool, &version);
+                        }
+                    }
+                }
+            }
             if !usages.is_empty() {
                 return Err(AppError::Config {
                     message: format!(

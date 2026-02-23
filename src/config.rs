@@ -11,7 +11,7 @@ use crate::paths::{config_path, expand_tilde};
 pub struct Config {
     #[serde(default)]
     pub global: Global,
-    #[serde(default, rename = "scope")]
+    #[serde(default, rename = "scope", skip_serializing_if = "Vec::is_empty")]
     pub scopes: Vec<Scope>,
     #[serde(default)]
     pub manifest: ManifestConfig,
@@ -114,6 +114,32 @@ impl Config {
 
         usages
     }
+
+    pub fn remove_tool_version_from_scope(
+        &mut self,
+        normalized_pattern: &str,
+        tool: &str,
+        version: &str,
+    ) -> Result<bool, AppError> {
+        for index in 0..self.scopes.len() {
+            let expanded = expand_tilde(&self.scopes[index].pattern)?;
+            if expanded != normalized_pattern {
+                continue;
+            }
+            if self.scopes[index]
+                .tools
+                .get(tool)
+                .is_some_and(|value| value == version)
+            {
+                self.scopes[index].tools.remove(tool);
+                if self.scopes[index].tools.is_empty() {
+                    self.scopes.remove(index);
+                }
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
@@ -155,6 +181,16 @@ mod tests {
         assert_eq!(loaded_path, path);
         assert_eq!(loaded.global.tools.get("node"), Some(&"22.0.0".to_string()));
         assert_eq!(loaded.scopes.len(), 1);
+    }
+
+    #[test]
+    fn save_omits_empty_scope_array() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("config.toml");
+        let config = Config::default();
+        config.save(&path).expect("save");
+        let contents = fs::read_to_string(&path).expect("read config");
+        assert!(!contents.contains("scope = []"));
     }
 
     #[test]
@@ -233,5 +269,43 @@ mod tests {
 
         let unused = config.is_tool_version_in_use("deno", "1.0.0");
         assert!(unused.is_empty());
+    }
+
+    #[test]
+    fn remove_tool_version_from_scope_removes_only_matching_entry() {
+        let mut config = Config {
+            scopes: vec![Scope {
+                pattern: "/workspace/**".into(),
+                tools: map(&[("node", "22.0.0"), ("bun", "1.0.0")]),
+            }],
+            ..Default::default()
+        };
+
+        let removed = config
+            .remove_tool_version_from_scope("/workspace/**", "node", "22.0.0")
+            .expect("remove");
+        assert!(removed);
+        assert!(!config.scopes[0].tools.contains_key("node"));
+        assert_eq!(
+            config.scopes[0].tools.get("bun"),
+            Some(&"1.0.0".to_string())
+        );
+    }
+
+    #[test]
+    fn remove_tool_version_from_scope_removes_empty_scope() {
+        let mut config = Config {
+            scopes: vec![Scope {
+                pattern: "/workspace/**".into(),
+                tools: map(&[("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+
+        let removed = config
+            .remove_tool_version_from_scope("/workspace/**", "node", "22.0.0")
+            .expect("remove");
+        assert!(removed);
+        assert!(config.scopes.is_empty());
     }
 }

@@ -78,6 +78,53 @@ fn uninstall_in_use_version_fails() {
 }
 
 #[test]
+fn uninstall_in_use_version_succeeds_for_current_scope() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_file = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let shims = temp.path().join("shims");
+    let cache_tool_dir = cache.join("node").join("22.0.0");
+    let project_path = temp.path().join("workspace").join("project");
+
+    fs::create_dir_all(&project_path).expect("create project dir");
+    fs::write(
+        &config_file,
+        format!(
+            "[global.tools]\n\n[[scope]]\npath = \"{}/**\"\n[scope.tools]\nnode = \"22.0.0\"\n",
+            temp.path().join("workspace").display()
+        ),
+    )
+    .expect("write config");
+
+    fs::create_dir_all(&cache_tool_dir).expect("create tool cache dir");
+    fs::write(cache_tool_dir.join("node"), "fake binary").expect("create fake binary");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config_file)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("--shims-dir")
+        .arg(&shims)
+        .arg("--path")
+        .arg(&project_path)
+        .arg("uninstall")
+        .arg("node")
+        .arg("22.0.0")
+        .output()
+        .expect("run ampland");
+
+    assert!(
+        output.status.success(),
+        "uninstall should succeed for current scope: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let updated = fs::read_to_string(&config_file).expect("read config");
+    assert!(!updated.contains("node = \"22.0.0\""));
+}
+
+#[test]
 fn config_show_nonexistent_file() {
     let temp = tempfile::tempdir().expect("tempdir");
     let config = temp.path().join("config.toml");
