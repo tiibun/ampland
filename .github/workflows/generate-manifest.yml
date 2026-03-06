@@ -1,0 +1,57 @@
+name: generate-manifest
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: generate-manifest
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Prepare
+        uses: ./.github/actions/prepare-rust
+
+      - name: Generate manifests
+        run: cargo run --bin manifest-generate -- --output-dir assets/manifest
+
+      - name: Detect manifest changes
+        id: manifest_changes
+        run: |
+          if git diff --quiet --exit-code -- assets/manifest; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        if: steps.manifest_changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/generate-manifest
+          add-paths: |
+            assets/manifest/*.toml
+          delete-branch: true
+          commit-message: "chore: update generated manifests"
+          title: "chore: update generated manifests"
+          body: |
+            ## Summary
+            - run `manifest-generate` and commit manifest updates
+
+            ## Validation
+            - `cargo run --bin manifest-generate -- --output-dir assets/manifest`

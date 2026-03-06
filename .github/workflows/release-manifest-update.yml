@@ -1,0 +1,63 @@
+name: release-manifest-update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "assets/manifest/*.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-manifest-update
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare
+        uses: ./.github/actions/prepare-rust
+
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        id: bump_version
+        run: |
+          current_version="$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' Cargo.toml | head -n1)"
+          if [ -z "${current_version}" ]; then
+            echo "package version not found in Cargo.toml" >&2
+            exit 1
+          fi
+
+          IFS='.' read -r major minor patch <<< "${current_version}"
+          new_version="${major}.${minor}.$((patch + 1))"
+
+          sed -E -i.bak "0,/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"$/s//version = \"${new_version}\"/" Cargo.toml
+          rm Cargo.toml.bak
+
+          cargo check
+          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit release version
+        env:
+          VERSION: ${{ steps.bump_version.outputs.version }}
+        run: |
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release v${VERSION}"
+          git tag "v${VERSION}"
+
+      - name: Push release commit and tag
+        run: git push origin HEAD:main --follow-tags
