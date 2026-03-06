@@ -33,6 +33,12 @@ fn main() {
 }
 
 fn run() -> Result<(), AppError> {
+    if let Some(tool) = std::env::var_os(shim::SHIM_TOOL_ENV_VAR) {
+        if let Some(tool) = tool.to_str().filter(|value| !value.is_empty()) {
+            return shim::run_as_shim(tool);
+        }
+    }
+
     let argv0 = std::env::args().next().unwrap_or_default();
     let exec_name = std::path::Path::new(&argv0)
         .file_stem()

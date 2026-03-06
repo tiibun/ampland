@@ -1,8 +1,11 @@
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use tempfile::NamedTempFile;
 
 use crate::cache::Cache;
 use crate::config::Config;
@@ -12,6 +15,9 @@ use crate::paths::{cache_dir, shims_dir};
 use crate::resolve::resolve_tools;
 
 const MANAGED_SHIMS_FILE: &str = ".ampland-managed-shims";
+const MAIN_EXECUTABLE_PATH_FILE: &str = ".ampland-main-path";
+const EMBEDDED_SHIM: &[u8] = include_bytes!(env!("AMPLAND_EMBEDDED_SHIM_PATH"));
+pub const SHIM_TOOL_ENV_VAR: &str = "AMPLAND_SHIM_TOOL";
 
 pub fn rebuild_shims(
     config: &Config,
@@ -23,6 +29,8 @@ pub fn rebuild_shims(
         None => shims_dir()?,
     };
     fs::create_dir_all(&shims_root)?;
+    let main_exe = current_main_executable()?;
+    write_main_executable_path(&shims_root, &main_exe)?;
 
     let manifest = ManifestStore::new(cache_root, &config.manifest).load()?;
     let target = Target::current()?;
@@ -43,10 +51,9 @@ pub fn rebuild_shims(
     }
 
     let mut created = Vec::new();
-    let exe = env::current_exe()?;
     for name in shim_names {
         let shim_path = shim_path_for(&shims_root, &name);
-        fs::copy(&exe, &shim_path)?;
+        write_embedded_shim(&shim_path)?;
         created.push(shim_path);
     }
     managed = expected_names;
@@ -61,13 +68,15 @@ pub fn add_shim(tool: &str, shims_override: Option<&Path>) -> Result<PathBuf, Ap
         None => shims_dir()?,
     };
     fs::create_dir_all(&shims_root)?;
-    let exe = env::current_exe()?;
+    let main_exe = current_main_executable()?;
+    write_main_executable_path(&shims_root, &main_exe)?;
     let shim_path = shim_path_for(&shims_root, tool);
-    fs::copy(&exe, &shim_path)?;
+    write_embedded_shim(&shim_path)?;
     Ok(shim_path)
 }
 
 pub fn run_as_shim(tool: &str) -> Result<(), AppError> {
+    env::remove_var(SHIM_TOOL_ENV_VAR);
     let (config, _) = Config::load(None)?;
     let cwd = env::current_dir()?;
     let cache = Cache::new(cache_dir()?);
@@ -100,6 +109,8 @@ fn sync_runtime_shims(
         None => shims_dir()?,
     };
     fs::create_dir_all(&shims_root)?;
+    let main_exe = current_main_executable()?;
+    write_main_executable_path(&shims_root, &main_exe)?;
     let resolved = resolve_tools(config, cwd)?;
     let mut names = BTreeSet::new();
     for (tool, version) in resolved.tools {
@@ -122,13 +133,12 @@ fn sync_runtime_shims(
     }
 
     let mut created = Vec::new();
-    let exe = env::current_exe()?;
     for name in &names {
         let shim_path = shim_path_for(&shims_root, name);
-        if shim_path.exists() {
+        if shim_path.exists() && shim_matches_embedded_helper(&shim_path)? {
             continue;
         }
-        fs::copy(&exe, &shim_path)?;
+        write_embedded_shim(&shim_path)?;
         created.push(shim_path);
     }
     managed = names;
@@ -138,6 +148,10 @@ fn sync_runtime_shims(
 
 fn managed_shims_path(shims_root: &Path) -> PathBuf {
     shims_root.join(MANAGED_SHIMS_FILE)
+}
+
+fn main_executable_path_path(shims_root: &Path) -> PathBuf {
+    shims_root.join(MAIN_EXECUTABLE_PATH_FILE)
 }
 
 fn load_managed_shims(shims_root: &Path) -> Result<BTreeSet<String>, AppError> {
@@ -165,6 +179,59 @@ fn save_managed_shims(shims_root: &Path, shims: &BTreeSet<String>) -> Result<(),
         value
     };
     fs::write(managed_shims_path(shims_root), contents)?;
+    Ok(())
+}
+
+fn current_main_executable() -> Result<PathBuf, AppError> {
+    let exe = env::current_exe()?;
+    match fs::canonicalize(&exe) {
+        Ok(path) => Ok(path),
+        Err(_) => Ok(exe),
+    }
+}
+
+fn write_main_executable_path(shims_root: &Path, path: &Path) -> Result<(), AppError> {
+    let mut contents = path.to_string_lossy().into_owned();
+    contents.push('\n');
+    write_file_atomically(&main_executable_path_path(shims_root), contents.as_bytes(), false)
+}
+
+fn write_embedded_shim(path: &Path) -> Result<(), AppError> {
+    write_file_atomically(path, EMBEDDED_SHIM, true)
+}
+
+fn shim_matches_embedded_helper(path: &Path) -> Result<bool, AppError> {
+    Ok(fs::read(path)? == EMBEDDED_SHIM)
+}
+
+fn write_file_atomically(path: &Path, contents: &[u8], executable: bool) -> Result<(), AppError> {
+    let parent = path.parent().ok_or_else(|| AppError::Io {
+        message: format!("path has no parent: {}", path.display()),
+    })?;
+    fs::create_dir_all(parent)?;
+    let mut temp = NamedTempFile::new_in(parent)?;
+    temp.write_all(contents)?;
+    set_file_permissions(temp.path(), executable)?;
+    temp.persist(path).map_err(|err| AppError::from(err.error))?;
+    Ok(())
+}
+
+fn set_file_permissions(path: &Path, executable: bool) -> Result<(), AppError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = if executable { 0o755 } else { 0o644 };
+        let mut permissions = fs::metadata(path)?.permissions();
+        permissions.set_mode(mode);
+        fs::set_permissions(path, permissions)?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (path, executable);
+    }
+
     Ok(())
 }
 
@@ -369,7 +436,7 @@ fn is_runtime_executable(path: &Path) -> Result<bool, AppError> {
     {
         use std::os::unix::fs::PermissionsExt;
         let mode = fs::metadata(path)?.permissions().mode();
-        return Ok((mode & 0o111) != 0);
+        Ok((mode & 0o111) != 0)
     }
 
     #[cfg(not(any(unix, windows)))]
@@ -555,10 +622,20 @@ name = "node"
     }
 
     #[test]
-    fn add_shim_creates_file_when_override_is_used() {
+    fn add_shim_creates_embedded_file_when_override_is_used() {
         let temp = tempfile::tempdir().expect("tempdir");
         let path = add_shim("node", Some(temp.path())).expect("add shim");
         assert!(path.exists());
+        assert_eq!(fs::read(&path).expect("read shim"), EMBEDDED_SHIM);
+        assert_eq!(
+            fs::read_to_string(main_executable_path_path(temp.path())).expect("read main path"),
+            format!(
+                "{}\n",
+                current_main_executable()
+                    .expect("current exe")
+                    .to_string_lossy()
+            )
+        );
     }
 
     #[test]
@@ -610,6 +687,37 @@ name = "node"
         assert_eq!(created.len(), 2);
         assert!(shim_path_for(&shims, "node").exists());
         assert!(shim_path_for(&shims, "pnpm").exists());
+        assert_eq!(
+            fs::read(shim_path_for(&shims, "node")).expect("read node shim"),
+            EMBEDDED_SHIM
+        );
+    }
+
+    #[test]
+    fn sync_runtime_shims_rewrites_existing_non_helper_shims() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().join("cache"));
+        let shims = temp.path().join("shims");
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "24.3.1")]),
+            },
+            ..Default::default()
+        };
+        let bin_dir = cache.tool_version_dir("node", "24.3.1").join("bin");
+        fs::create_dir_all(&bin_dir).expect("mkdir");
+        fs::write(bin_dir.join("node"), b"node").expect("write node");
+        mark_executable(&bin_dir.join("node"));
+
+        fs::create_dir_all(&shims).expect("mkdir shims");
+        let old_shim = shim_path_for(&shims, "node");
+        fs::write(&old_shim, b"old copied ampland").expect("write old shim");
+
+        let created = sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
+            .expect("sync shims");
+
+        assert_eq!(created, vec![old_shim.clone()]);
+        assert_eq!(fs::read(&old_shim).expect("read shim"), EMBEDDED_SHIM);
     }
 
     #[test]

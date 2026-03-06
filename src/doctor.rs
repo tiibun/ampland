@@ -27,11 +27,11 @@ pub fn run_doctor(
     cache_root: &Path,
     shims_root: &Path,
 ) -> Result<DoctorReport, AppError> {
-    let shims_in_path = path_contains(&shims_root);
+    let shims_in_path = path_contains(shims_root);
     let manifest = ManifestStore::new(cache_root, &config.manifest).load()?;
     let target = Target::current()?;
     let shim_names = list_shim_names(config, &manifest, &target);
-    let conflicts = detect_conflicts(&shims_root, &shim_names);
+    let conflicts = detect_conflicts(shims_root, &shim_names);
 
     let cache = Cache::new(cache_root.to_path_buf());
     let resolve = resolve_tools(config, cwd)?;
