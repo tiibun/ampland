@@ -3,7 +3,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub(crate) const USER_AGENT: &str = "ampland-manifest-generate";
@@ -39,7 +39,7 @@ pub(crate) struct GeneratorArgs {
     pub(crate) tool: Option<ToolSelector>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ToolManifest {
     pub(crate) version: u32,
     pub(crate) generated_at: String,
@@ -47,7 +47,7 @@ pub(crate) struct ToolManifest {
     pub(crate) tools: Vec<ToolEntry>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ToolEntry {
     pub(crate) name: String,
     pub(crate) vendor: String,
@@ -56,7 +56,7 @@ pub(crate) struct ToolEntry {
     pub(crate) versions: Vec<ToolVersion>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ToolVersion {
     pub(crate) ver: String,
     pub(crate) platform: String,
@@ -71,6 +71,30 @@ pub(crate) struct ToolVersion {
 pub(crate) struct TargetSpec {
     pub(crate) platform: &'static str,
     pub(crate) arch: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ManifestWriteOutcome {
+    Created,
+    Updated,
+    Unchanged,
+}
+
+impl ManifestWriteOutcome {
+    pub(crate) fn summary(self, path: &Path) -> String {
+        match self {
+            Self::Created | Self::Updated => format!("updated {}", path.display()),
+            Self::Unchanged => format!("unchanged {}", path.display()),
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Updated => "updated",
+            Self::Unchanged => "unchanged",
+        }
+    }
 }
 
 pub(crate) fn parse_args() -> Result<GeneratorArgs, String> {
@@ -141,15 +165,40 @@ pub(crate) fn selected_tools_label(tool: Option<ToolSelector>) -> &'static str {
     }
 }
 
-pub(crate) fn write_manifest(path: &Path, manifest: &ToolManifest) -> Result<(), String> {
+pub(crate) fn write_manifest(
+    path: &Path,
+    manifest: &ToolManifest,
+) -> Result<ManifestWriteOutcome, String> {
     let output = toml::to_string_pretty(manifest).map_err(|err| err.to_string())?;
+    let existed = path.exists();
+
+    if existed {
+        let existing_text = fs::read_to_string(path).map_err(|err| err.to_string())?;
+        let existing_manifest: ToolManifest =
+            toml::from_str(&existing_text).map_err(|err| err.to_string())?;
+        if manifests_match_ignoring_generated_at(&existing_manifest, manifest) {
+            return Ok(ManifestWriteOutcome::Unchanged);
+        }
+    }
+
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
     }
     fs::write(path, output).map_err(|err| err.to_string())?;
-    Ok(())
+    if existed {
+        Ok(ManifestWriteOutcome::Updated)
+    } else {
+        Ok(ManifestWriteOutcome::Created)
+    }
+}
+
+fn manifests_match_ignoring_generated_at(
+    existing: &ToolManifest,
+    generated: &ToolManifest,
+) -> bool {
+    existing.version == generated.version && existing.tools == generated.tools
 }
 
 pub(crate) fn default_targets() -> Vec<TargetSpec> {
@@ -238,11 +287,35 @@ pub(crate) fn download_and_hash(url: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::tempdir;
+
     use std::path::PathBuf;
 
     use super::{
-        parse_args_from, selected_tools_label, GeneratorArgs, ToolSelector, OUTPUT_DIR_DEFAULT,
+        parse_args_from, selected_tools_label, write_manifest, GeneratorArgs, ManifestWriteOutcome,
+        ToolEntry, ToolManifest, ToolSelector, ToolVersion, OUTPUT_DIR_DEFAULT,
     };
+
+    fn sample_manifest(generated_at: &str, default_version: &str) -> ToolManifest {
+        ToolManifest {
+            version: 1,
+            generated_at: generated_at.to_string(),
+            tools: vec![ToolEntry {
+                name: "node".to_string(),
+                vendor: "nodejs".to_string(),
+                default_version: default_version.to_string(),
+                versions: vec![ToolVersion {
+                    ver: default_version.to_string(),
+                    platform: "macos".to_string(),
+                    arch: "arm64".to_string(),
+                    url: format!("https://example.com/node-{default_version}.tar.gz"),
+                    sha256: format!("hash-{default_version}"),
+                    format: "tar.gz".to_string(),
+                    bin_paths: vec!["bin/node".to_string()],
+                }],
+            }],
+        }
+    }
 
     fn parse(values: &[&str]) -> Result<GeneratorArgs, String> {
         parse_args_from(values.iter().map(|value| value.to_string()))
@@ -313,5 +386,52 @@ mod tests {
         assert_eq!(selected_tools_label(None), "node and python");
         assert_eq!(selected_tools_label(Some(ToolSelector::Node)), "node");
         assert_eq!(selected_tools_label(Some(ToolSelector::Python)), "python");
+    }
+
+    #[test]
+    fn write_manifest_creates_new_file() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("node.toml");
+
+        let outcome = write_manifest(&path, &sample_manifest("2026-03-06T00:00:00Z", "24.0.0"))
+            .expect("write manifest");
+
+        assert_eq!(outcome, ManifestWriteOutcome::Created);
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn write_manifest_skips_rewrite_when_only_timestamp_changes() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("node.toml");
+
+        write_manifest(&path, &sample_manifest("2026-03-06T00:00:00Z", "24.0.0"))
+            .expect("initial write");
+        let outcome = write_manifest(&path, &sample_manifest("2026-03-07T00:00:00Z", "24.0.0"))
+            .expect("second write");
+        let saved: ToolManifest =
+            toml::from_str(&std::fs::read_to_string(&path).expect("read manifest"))
+                .expect("parse manifest");
+
+        assert_eq!(outcome, ManifestWriteOutcome::Unchanged);
+        assert_eq!(saved.generated_at, "2026-03-06T00:00:00Z");
+    }
+
+    #[test]
+    fn write_manifest_updates_when_manifest_changes() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("node.toml");
+
+        write_manifest(&path, &sample_manifest("2026-03-06T00:00:00Z", "24.0.0"))
+            .expect("initial write");
+        let outcome = write_manifest(&path, &sample_manifest("2026-03-07T00:00:00Z", "25.0.0"))
+            .expect("updated write");
+        let saved: ToolManifest =
+            toml::from_str(&std::fs::read_to_string(&path).expect("read manifest"))
+                .expect("parse manifest");
+
+        assert_eq!(outcome, ManifestWriteOutcome::Updated);
+        assert_eq!(saved.generated_at, "2026-03-07T00:00:00Z");
+        assert_eq!(saved.tools[0].default_version, "25.0.0");
     }
 }

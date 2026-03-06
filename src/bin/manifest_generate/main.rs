@@ -24,32 +24,33 @@ fn run() -> Result<(), String> {
     let generated_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .map_err(|err| err.to_string())?;
-    let mut written = Vec::new();
+    let mut outcomes = Vec::new();
 
     if matches!(args.tool, None | Some(ToolSelector::Node)) {
         let path = args.output_dir.join("node.toml");
         eprintln!("manifest-generate: node generation started");
         let manifest = node::generate_node_manifest(&generated_at)?;
-        write_manifest(&path, &manifest)?;
-        eprintln!("manifest-generate: node generation finished");
-        written.push(path);
+        let outcome = write_manifest(&path, &manifest)?;
+        eprintln!(
+            "manifest-generate: node generation finished ({})",
+            outcome.label()
+        );
+        outcomes.push(outcome.summary(&path));
     }
 
     if matches!(args.tool, None | Some(ToolSelector::Python)) {
         let path = args.output_dir.join("python.toml");
         eprintln!("manifest-generate: python generation started");
         let manifest = python::generate_python_manifest(&generated_at)?;
-        write_manifest(&path, &manifest)?;
-        eprintln!("manifest-generate: python generation finished");
-        written.push(path);
+        let outcome = write_manifest(&path, &manifest)?;
+        eprintln!(
+            "manifest-generate: python generation finished ({})",
+            outcome.label()
+        );
+        outcomes.push(outcome.summary(&path));
     }
 
-    let summary = written
-        .iter()
-        .map(|path| path.display().to_string())
-        .collect::<Vec<_>>()
-        .join(" and ");
-    println!("Wrote {summary}");
+    println!("{}", outcomes.join(", "));
 
     Ok(())
 }
