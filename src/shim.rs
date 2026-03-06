@@ -193,7 +193,11 @@ fn current_main_executable() -> Result<PathBuf, AppError> {
 fn write_main_executable_path(shims_root: &Path, path: &Path) -> Result<(), AppError> {
     let mut contents = path.to_string_lossy().into_owned();
     contents.push('\n');
-    write_file_atomically(&main_executable_path_path(shims_root), contents.as_bytes(), false)
+    write_file_atomically(
+        &main_executable_path_path(shims_root),
+        contents.as_bytes(),
+        false,
+    )
 }
 
 fn write_embedded_shim(path: &Path) -> Result<(), AppError> {
@@ -212,7 +216,8 @@ fn write_file_atomically(path: &Path, contents: &[u8], executable: bool) -> Resu
     let mut temp = NamedTempFile::new_in(parent)?;
     temp.write_all(contents)?;
     set_file_permissions(temp.path(), executable)?;
-    temp.persist(path).map_err(|err| AppError::from(err.error))?;
+    temp.persist(path)
+        .map_err(|err| AppError::from(err.error))?;
     Ok(())
 }
 

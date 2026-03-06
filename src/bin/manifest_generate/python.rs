@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use semver::Version;
 use serde::Deserialize;
@@ -45,19 +45,26 @@ pub(crate) fn generate_python_manifest(generated_at: &str) -> Result<ToolManifes
     }
 
     let mut tool_versions = Vec::new();
-    let mut resolved_versions = Vec::new();
-
-    let minors = python_minors_with_all_targets(&version_map);
-    if minors.is_empty() {
+    let selected_versions = select_python_versions(&version_map);
+    if selected_versions.is_empty() {
         return Err("no python versions with all targets found".to_string());
     }
+    let targets = python_targets();
+    eprintln!(
+        "python: selected {} versions across {} targets",
+        selected_versions.len(),
+        targets.len()
+    );
 
-    for minor in minors {
-        let selected = select_python_version(&version_map, minor)?;
-        let version_str = selected.version.to_string();
-        resolved_versions.push(version_str.clone());
-
-        for target in python_targets() {
+    for (version_index, selected) in selected_versions.iter().enumerate() {
+        eprintln!(
+            "python: processing {} ({}/{}, {} targets)",
+            selected.version,
+            version_index + 1,
+            selected_versions.len(),
+            targets.len()
+        );
+        for target in &targets {
             let target_key = (target.platform.to_string(), target.arch.to_string());
             let asset = selected.assets.get(&target_key).ok_or_else(|| {
                 format!(
@@ -78,15 +85,15 @@ pub(crate) fn generate_python_manifest(generated_at: &str) -> Result<ToolManifes
                 url: asset.url.clone(),
                 sha256,
                 format: "tar.gz".to_string(),
-                bin_paths: python_bin_paths(target),
+                bin_paths: python_bin_paths(*target),
             });
         }
     }
 
-    let default_version = resolved_versions
+    let default_version = selected_versions
         .first()
-        .ok_or_else(|| "no python versions resolved".to_string())?
-        .to_string();
+        .map(|selected| selected.version.to_string())
+        .ok_or_else(|| "no python versions resolved".to_string())?;
 
     Ok(ToolManifest {
         version: 1,
@@ -100,92 +107,61 @@ pub(crate) fn generate_python_manifest(generated_at: &str) -> Result<ToolManifes
     })
 }
 
-fn python_minors_with_all_targets(
-    version_map: &HashMap<Version, HashMap<(String, String), PythonAssetInfo>>,
-) -> Vec<u64> {
-    let targets = python_targets();
-    let mut minors = HashSet::new();
-
-    for (version, assets) in version_map {
-        if version.major != 3 {
-            continue;
-        }
-        let mut missing = false;
-        for target in &targets {
-            let key = (target.platform.to_string(), target.arch.to_string());
-            if !assets.contains_key(&key) {
-                missing = true;
-                break;
-            }
-        }
-        if !missing {
-            minors.insert(version.minor);
-        }
-    }
-
-    let mut minors: Vec<u64> = minors.into_iter().collect();
-    minors.sort_unstable_by(|a, b| b.cmp(a));
-    minors
-}
-
 #[derive(Debug)]
 struct SelectedPythonVersion {
     version: Version,
     assets: HashMap<(String, String), PythonAssetInfo>,
 }
 
-fn select_python_version(
+fn select_python_versions(
     version_map: &HashMap<Version, HashMap<(String, String), PythonAssetInfo>>,
-    minor: u64,
-) -> Result<SelectedPythonVersion, String> {
-    let targets = python_targets();
-    let mut best: Option<Version> = None;
+) -> Vec<SelectedPythonVersion> {
+    let mut selected = Vec::new();
 
-    for version in version_map.keys() {
-        if version.major != 3 || version.minor != minor {
+    for (version, assets) in version_map {
+        if version.major != 3 {
             continue;
         }
-        let assets = match version_map.get(version) {
-            Some(value) => value,
-            None => continue,
-        };
-        let mut missing = false;
-        for target in &targets {
-            let key = (target.platform.to_string(), target.arch.to_string());
-            if !assets.contains_key(&key) {
-                missing = true;
-                break;
-            }
-        }
-        if missing {
+        if !python_version_has_all_targets(assets) {
             continue;
         }
-        let update = match &best {
-            Some(current) => version > current,
-            None => true,
-        };
-        if update {
-            best = Some(version.clone());
-        }
+
+        selected.push(SelectedPythonVersion {
+            version: version.clone(),
+            assets: assets.clone(),
+        });
     }
 
-    let version = best.ok_or_else(|| format!("no python {minor}.x release with all targets"))?;
-    let assets = version_map
-        .get(&version)
-        .cloned()
-        .ok_or_else(|| "selected python version missing assets".to_string())?;
+    selected.sort_unstable_by(|a, b| b.version.cmp(&a.version));
+    selected
+}
 
-    Ok(SelectedPythonVersion { version, assets })
+fn python_version_has_all_targets(assets: &HashMap<(String, String), PythonAssetInfo>) -> bool {
+    for target in python_targets() {
+        let key = (target.platform.to_string(), target.arch.to_string());
+        if !assets.contains_key(&key) {
+            return false;
+        }
+    }
+    true
 }
 
 fn fetch_python_assets() -> Result<Vec<PythonAssetInfo>, String> {
     let url = "https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=5";
+    eprintln!("python: fetching release metadata");
     let text = fetch_text(url)?;
     let releases: Vec<GithubRelease> =
         serde_json::from_str(&text).map_err(|err| err.to_string())?;
+    let release_count = releases.len();
+    eprintln!("python: inspecting {release_count} GitHub releases");
     let mut assets = Vec::new();
 
-    for release in releases {
+    for (index, release) in releases.into_iter().enumerate() {
+        eprintln!(
+            "python: scanning release {} of {}",
+            index + 1,
+            release_count
+        );
         let mut sha256_by_name = HashMap::new();
         for asset in &release.assets {
             if asset.name.ends_with(".sha256") || asset.name.ends_with(".sha256.txt") {
@@ -200,6 +176,7 @@ fn fetch_python_assets() -> Result<Vec<PythonAssetInfo>, String> {
         }
     }
 
+    eprintln!("python: discovered {} candidate assets", assets.len());
     Ok(assets)
 }
 
@@ -297,5 +274,80 @@ fn python_bin_paths(target: TargetSpec) -> Vec<String> {
             "python/bin/python".to_string(),
             "python/bin/python3".to_string(),
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use semver::Version;
+
+    use super::{python_targets, select_python_versions, PythonAssetInfo};
+
+    #[test]
+    fn select_python_versions_keeps_all_complete_patch_releases_descending() {
+        let mut version_map = HashMap::new();
+        version_map.insert(
+            Version::parse("3.13.2").unwrap(),
+            assets_for_version("3.13.2"),
+        );
+        version_map.insert(
+            Version::parse("3.13.1").unwrap(),
+            assets_for_version("3.13.1"),
+        );
+        version_map.insert(
+            Version::parse("3.12.9").unwrap(),
+            assets_for_version("3.12.9"),
+        );
+        version_map.insert(
+            Version::parse("3.12.8").unwrap(),
+            incomplete_assets_for_version("3.12.8"),
+        );
+        version_map.insert(
+            Version::parse("3.11.11").unwrap(),
+            assets_for_version("3.11.11"),
+        );
+        version_map.insert(
+            Version::parse("2.7.18").unwrap(),
+            assets_for_version("2.7.18"),
+        );
+
+        let selected = select_python_versions(&version_map);
+        let version_strings: Vec<String> = selected
+            .into_iter()
+            .map(|version| version.version.to_string())
+            .collect();
+
+        assert_eq!(
+            version_strings,
+            vec!["3.13.2", "3.13.1", "3.12.9", "3.11.11"]
+        );
+    }
+
+    fn assets_for_version(version: &str) -> HashMap<(String, String), PythonAssetInfo> {
+        python_targets()
+            .into_iter()
+            .map(|target| {
+                let key = (target.platform.to_string(), target.arch.to_string());
+                let info = PythonAssetInfo {
+                    version: Version::parse(version).unwrap(),
+                    version_str: version.to_string(),
+                    target,
+                    url: format!("https://example.com/{version}/{}-{}", key.0, key.1),
+                    sha256_url: Some(format!(
+                        "https://example.com/{version}/{}-{}.sha256",
+                        key.0, key.1
+                    )),
+                };
+                (key, info)
+            })
+            .collect()
+    }
+
+    fn incomplete_assets_for_version(version: &str) -> HashMap<(String, String), PythonAssetInfo> {
+        let mut assets = assets_for_version(version);
+        assets.remove(&(String::from("windows"), String::from("x64")));
+        assets
     }
 }

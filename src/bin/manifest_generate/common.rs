@@ -10,6 +10,35 @@ pub(crate) const USER_AGENT: &str = "ampland-manifest-generate";
 pub(crate) const OUTPUT_DIR_DEFAULT: &str = "assets/manifest";
 pub(crate) const MAX_TEXT_BYTES: usize = 20 * 1024 * 1024;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolSelector {
+    Node,
+    Python,
+}
+
+impl ToolSelector {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "node" => Some(Self::Node),
+            "python" => Some(Self::Python),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Python => "python",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GeneratorArgs {
+    pub(crate) output_dir: PathBuf,
+    pub(crate) tool: Option<ToolSelector>,
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct ToolManifest {
     pub(crate) version: u32,
@@ -44,9 +73,17 @@ pub(crate) struct TargetSpec {
     pub(crate) arch: &'static str,
 }
 
-pub(crate) fn parse_args() -> Result<PathBuf, String> {
-    let mut args = env::args().skip(1);
+pub(crate) fn parse_args() -> Result<GeneratorArgs, String> {
+    parse_args_from(env::args().skip(1))
+}
+
+fn parse_args_from<I>(args: I) -> Result<GeneratorArgs, String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut args = args.into_iter();
     let mut output_dir = None;
+    let mut positional = Vec::new();
 
     while let Some(arg) = args.next() {
         if arg == "--output-dir" {
@@ -54,12 +91,54 @@ pub(crate) fn parse_args() -> Result<PathBuf, String> {
                 .next()
                 .ok_or_else(|| "missing value for --output-dir".to_string())?;
             output_dir = Some(PathBuf::from(value));
-        } else {
+        } else if arg.starts_with("--") {
             return Err(format!("unknown argument: {arg}"));
+        } else {
+            positional.push(arg);
         }
     }
 
-    Ok(output_dir.unwrap_or_else(|| PathBuf::from(OUTPUT_DIR_DEFAULT)))
+    let tool = match positional.as_slice() {
+        [] => None,
+        [value] => {
+            if let Some(tool) = ToolSelector::parse(value) {
+                Some(tool)
+            } else if output_dir.is_some() {
+                return Err(unknown_tool_selector(value));
+            } else {
+                output_dir = Some(PathBuf::from(value));
+                None
+            }
+        }
+        [dir, value] => {
+            if output_dir.is_some() {
+                return Err(format!("unexpected positional output directory: {dir}"));
+            }
+            output_dir = Some(PathBuf::from(dir));
+            Some(ToolSelector::parse(value).ok_or_else(|| unknown_tool_selector(value))?)
+        }
+        _ => {
+            return Err(
+                "too many positional arguments (expected [output-dir] [node|python])".to_string(),
+            )
+        }
+    };
+
+    Ok(GeneratorArgs {
+        output_dir: output_dir.unwrap_or_else(|| PathBuf::from(OUTPUT_DIR_DEFAULT)),
+        tool,
+    })
+}
+
+fn unknown_tool_selector(value: &str) -> String {
+    format!("unknown tool selector: {value} (expected one of: node, python)")
+}
+
+pub(crate) fn selected_tools_label(tool: Option<ToolSelector>) -> &'static str {
+    match tool {
+        Some(tool) => tool.name(),
+        None => "node and python",
+    }
 }
 
 pub(crate) fn write_manifest(path: &Path, manifest: &ToolManifest) -> Result<(), String> {
@@ -155,4 +234,84 @@ pub(crate) fn download_and_hash(url: &str) -> Result<String, String> {
         hasher.update(&buf[..read]);
     }
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{
+        parse_args_from, selected_tools_label, GeneratorArgs, ToolSelector, OUTPUT_DIR_DEFAULT,
+    };
+
+    fn parse(values: &[&str]) -> Result<GeneratorArgs, String> {
+        parse_args_from(values.iter().map(|value| value.to_string()))
+    }
+
+    #[test]
+    fn parses_default_args() {
+        assert_eq!(
+            parse(&[]).unwrap(),
+            GeneratorArgs {
+                output_dir: PathBuf::from(OUTPUT_DIR_DEFAULT),
+                tool: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_tool_selector_only() {
+        assert_eq!(
+            parse(&["node"]).unwrap(),
+            GeneratorArgs {
+                output_dir: PathBuf::from(OUTPUT_DIR_DEFAULT),
+                tool: Some(ToolSelector::Node),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_positional_output_dir_and_tool() {
+        assert_eq!(
+            parse(&["path/to/out", "python"]).unwrap(),
+            GeneratorArgs {
+                output_dir: PathBuf::from("path/to/out"),
+                tool: Some(ToolSelector::Python),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_flag_output_dir_and_tool() {
+        assert_eq!(
+            parse(&["--output-dir", "path/to/out", "node"]).unwrap(),
+            GeneratorArgs {
+                output_dir: PathBuf::from("path/to/out"),
+                tool: Some(ToolSelector::Node),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_tool_selector() {
+        assert_eq!(
+            parse(&["--output-dir", "path/to/out", "ruby"]).unwrap_err(),
+            "unknown tool selector: ruby (expected one of: node, python)"
+        );
+    }
+
+    #[test]
+    fn rejects_extra_positional_arguments() {
+        assert_eq!(
+            parse(&["path/to/out", "node", "extra"]).unwrap_err(),
+            "too many positional arguments (expected [output-dir] [node|python])"
+        );
+    }
+
+    #[test]
+    fn formats_selected_tools_label() {
+        assert_eq!(selected_tools_label(None), "node and python");
+        assert_eq!(selected_tools_label(Some(ToolSelector::Node)), "node");
+        assert_eq!(selected_tools_label(Some(ToolSelector::Python)), "python");
+    }
 }

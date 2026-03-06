@@ -16,12 +16,25 @@ struct NodeIndexEntry {
 
 pub(crate) fn generate_node_manifest(generated_at: &str) -> Result<ToolManifest, String> {
     let versions = fetch_node_versions()?;
+    let targets = node_targets();
+    eprintln!(
+        "node: selected {} versions across {} targets",
+        versions.len(),
+        targets.len()
+    );
     let mut tool_versions = Vec::new();
 
-    for version in &versions {
+    for (index, version) in versions.iter().enumerate() {
+        if should_log_node_progress(index, versions.len()) {
+            eprintln!(
+                "node: fetching checksums for {version} ({}/{})",
+                index + 1,
+                versions.len()
+            );
+        }
         let sha256s = fetch_node_sha256s(&version.to_string())?;
-        for target in node_targets() {
-            let filename = node_filename(&version.to_string(), target)?;
+        for target in &targets {
+            let filename = node_filename(&version.to_string(), *target)?;
             let sha256 = sha256s
                 .get(&filename)
                 .ok_or_else(|| format!("missing sha256 for {filename}"))?
@@ -33,8 +46,8 @@ pub(crate) fn generate_node_manifest(generated_at: &str) -> Result<ToolManifest,
                 arch: target.arch.to_string(),
                 url,
                 sha256,
-                format: node_format(target).to_string(),
-                bin_paths: node_bin_paths(&version.to_string(), target),
+                format: node_format(*target).to_string(),
+                bin_paths: node_bin_paths(&version.to_string(), *target),
             });
         }
     }
@@ -58,9 +71,19 @@ pub(crate) fn generate_node_manifest(generated_at: &str) -> Result<ToolManifest,
 
 fn fetch_node_versions() -> Result<Vec<Version>, String> {
     let url = "https://nodejs.org/dist/index.json";
+    eprintln!("node: fetching release index");
     let text = fetch_text(url)?;
     let entries: Vec<NodeIndexEntry> =
         serde_json::from_str(&text).map_err(|err| err.to_string())?;
+    let versions = select_node_versions(entries);
+    eprintln!(
+        "node: release index resolved to {} versions",
+        versions.len()
+    );
+    Ok(versions)
+}
+
+fn select_node_versions(entries: Vec<NodeIndexEntry>) -> Vec<Version> {
     let mut seen = HashMap::new();
 
     for entry in entries {
@@ -82,7 +105,7 @@ fn fetch_node_versions() -> Result<Vec<Version>, String> {
     let mut resolved: Vec<Version> = seen.into_values().collect();
     resolved.sort_unstable_by(|a, b| b.cmp(a));
 
-    Ok(resolved)
+    resolved
 }
 
 fn fetch_node_sha256s(version: &str) -> Result<HashMap<String, String>, String> {
@@ -104,6 +127,10 @@ fn fetch_node_sha256s(version: &str) -> Result<HashMap<String, String>, String> 
     }
 
     Ok(map)
+}
+
+fn should_log_node_progress(index: usize, total: usize) -> bool {
+    index == 0 || index + 1 == total || (index + 1).is_multiple_of(10)
 }
 
 fn node_targets() -> Vec<TargetSpec> {
@@ -158,5 +185,57 @@ fn node_bin_paths(version: &str, target: TargetSpec) -> Vec<String> {
             format!("{base}/bin/npm"),
             format!("{base}/bin/npx"),
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{select_node_versions, should_log_node_progress, NodeIndexEntry};
+
+    #[test]
+    fn select_node_versions_keeps_all_matching_releases_descending() {
+        let versions = select_node_versions(vec![
+            NodeIndexEntry {
+                version: "v24.1.0".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v24.0.0".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v25.0.0".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v20.18.1".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v19.9.0".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v24.1.0-rc.1".to_string(),
+            },
+            NodeIndexEntry {
+                version: "invalid".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v24.1.0".to_string(),
+            },
+        ]);
+
+        let version_strings: Vec<String> = versions
+            .into_iter()
+            .map(|version| version.to_string())
+            .collect();
+        assert_eq!(
+            version_strings,
+            vec!["25.0.0", "24.1.0", "24.0.0", "20.18.1"]
+        );
+    }
+
+    #[test]
+    fn logs_node_progress_at_milestones() {
+        assert!(should_log_node_progress(0, 139));
+        assert!(should_log_node_progress(9, 139));
+        assert!(!should_log_node_progress(10, 139));
+        assert!(should_log_node_progress(138, 139));
     }
 }
