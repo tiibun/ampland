@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 const MAIN_EXECUTABLE_PATH_FILE: &str = ".ampland-main-path";
 const SHIM_TOOL_ENV_VAR: &str = "AMPLAND_SHIM_TOOL";
@@ -24,7 +24,7 @@ fn run() -> Result<(), String> {
         .status()
         .map_err(|err| format!("failed to launch {}: {err}", ampland.display()))?;
 
-    std::process::exit(status.code().unwrap_or(1));
+    std::process::exit(exit_status_code(&status));
 }
 
 fn tool_name(shim_path: &Path) -> Result<String, String> {
@@ -97,4 +97,21 @@ fn ampland_executable_name() -> &'static str {
     } else {
         "ampland"
     }
+}
+
+fn exit_status_code(status: &ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+
+    1
 }

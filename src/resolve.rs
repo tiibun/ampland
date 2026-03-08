@@ -1,9 +1,8 @@
-use std::collections::HashMap;
 use std::path::Path;
 
 use globset::Glob;
 
-use crate::config::{Config, Scope};
+use crate::config::{Config, Scope, ToolVersions};
 use crate::error::AppError;
 
 #[derive(Debug, Clone)]
@@ -22,14 +21,14 @@ pub enum ResolutionSource {
 
 #[derive(Debug, Clone)]
 pub struct ResolveResult {
-    pub tools: HashMap<String, String>,
+    pub tools: ToolVersions,
     pub scope: Option<ScopeMatch>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ScopeMatch {
     pub pattern: String,
-    pub tools: HashMap<String, String>,
+    pub tools: ToolVersions,
 }
 
 pub fn resolve_tools(config: &Config, cwd: &Path) -> Result<ResolveResult, AppError> {
@@ -126,7 +125,7 @@ mod tests {
     use super::*;
     use crate::config::{Global, Scope};
 
-    fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+    fn map(entries: &[(&str, &str)]) -> ToolVersions {
         entries
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))

@@ -77,12 +77,15 @@ impl Cache {
             let mut versions = Vec::new();
             for version in fs::read_dir(&path)? {
                 let version = version?;
-                if version.path().is_dir() {
+                let version_path = version.path();
+                if version_path.is_dir() && version_path.join(INSTALL_MARKER_FILE).is_file() {
                     versions.push(version.file_name().to_string_lossy().to_string());
                 }
             }
             versions.sort();
-            result.push((tool, versions));
+            if !versions.is_empty() {
+                result.push((tool, versions));
+            }
         }
         result.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(result)
@@ -165,6 +168,13 @@ mod tests {
             let bin = cache.tool_bin_path(tool, version);
             fs::create_dir_all(bin.parent().expect("parent")).expect("mkdir");
             fs::write(bin, b"x").expect("write");
+            fs::write(
+                cache
+                    .tool_version_dir(tool, version)
+                    .join(INSTALL_MARKER_FILE),
+                b"ok",
+            )
+            .expect("write marker");
         }
         let listed = cache.list_installed().expect("list");
         assert_eq!(listed.len(), 2);
@@ -190,5 +200,29 @@ mod tests {
             .uninstall("node", "99")
             .expect_err("missing install should fail");
         assert!(matches!(err, AppError::Cache { .. }));
+    }
+
+    #[test]
+    fn list_installed_ignores_incomplete_versions() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+
+        let complete = cache.tool_bin_path("node", "22");
+        fs::create_dir_all(complete.parent().expect("parent")).expect("mkdir");
+        fs::write(&complete, b"x").expect("write node");
+        fs::write(
+            cache
+                .tool_version_dir("node", "22")
+                .join(INSTALL_MARKER_FILE),
+            b"ok",
+        )
+        .expect("write marker");
+
+        let partial = cache.tool_bin_path("node", "23");
+        fs::create_dir_all(partial.parent().expect("parent")).expect("mkdir");
+        fs::write(&partial, b"x").expect("write partial");
+
+        let listed = cache.list_installed().expect("list");
+        assert_eq!(listed, vec![("node".to_string(), vec!["22".to_string()])]);
     }
 }

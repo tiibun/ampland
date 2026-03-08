@@ -3,7 +3,7 @@ use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 use tempfile::NamedTempFile;
 
@@ -95,7 +95,24 @@ pub fn run_as_shim(tool: &str) -> Result<(), AppError> {
 
 fn exec_tool(path: &Path, args: &[String]) -> Result<i32, AppError> {
     let status = Command::new(path).args(args).status()?;
-    Ok(status.code().unwrap_or(1))
+    Ok(exit_status_code(&status))
+}
+
+fn exit_status_code(status: &ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+
+    1
 }
 
 fn sync_runtime_shims(
@@ -529,11 +546,23 @@ mod tests {
         }
     }
 
-    fn map(entries: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+    fn map(entries: &[(&str, &str)]) -> crate::config::ToolVersions {
         entries
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_status_code_maps_signal_to_shell_convention() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let signaled = ExitStatus::from_raw(15);
+        assert_eq!(exit_status_code(&signaled), 143);
+
+        let exited = ExitStatus::from_raw(7 << 8);
+        assert_eq!(exit_status_code(&exited), 7);
     }
 
     fn sample_manifest() -> Manifest {

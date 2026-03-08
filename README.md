@@ -324,7 +324,8 @@ ampland which node
 ampland explain node
 ```
 
-`doctor` checks PATH conflicts, missing versions, and cache integrity. `which`
+`doctor` checks whether the shims directory is early enough in PATH, reports
+conflicts, missing versions, and cache integrity. `which`
 shows the resolved binary. `explain` prints the matching scope and fallback
 chain used to decide a version.
 

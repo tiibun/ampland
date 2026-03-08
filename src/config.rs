@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,7 +20,7 @@ pub struct Config {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Global {
     #[serde(default)]
-    pub tools: HashMap<String, String>,
+    pub tools: ToolVersions,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -28,7 +28,7 @@ pub struct Scope {
     #[serde(rename = "path")]
     pub pattern: String,
     #[serde(default)]
-    pub tools: HashMap<String, String>,
+    pub tools: ToolVersions,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -42,6 +42,8 @@ pub struct ManifestConfig {
     #[serde(default)]
     pub ttl_hours: Option<u64>,
 }
+
+pub type ToolVersions = BTreeMap<String, String>;
 
 impl Config {
     pub fn load(path_override: Option<&Path>) -> Result<(Self, PathBuf), AppError> {
@@ -146,7 +148,7 @@ impl Config {
 mod tests {
     use super::*;
 
-    fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+    fn map(entries: &[(&str, &str)]) -> ToolVersions {
         entries
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
@@ -191,6 +193,30 @@ mod tests {
         config.save(&path).expect("save");
         let contents = fs::read_to_string(&path).expect("read config");
         assert!(!contents.contains("scope = []"));
+    }
+
+    #[test]
+    fn save_orders_tools_deterministically() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("config.toml");
+        let config = Config {
+            global: Global {
+                tools: map(&[("python", "3.12.1"), ("bun", "1.2.0"), ("node", "22.0.0")]),
+            },
+            scopes: vec![Scope {
+                pattern: "/workspace/**".into(),
+                tools: map(&[("pnpm", "9.0.0"), ("node", "22.0.0")]),
+            }],
+            ..Default::default()
+        };
+
+        config.save(&path).expect("save");
+        let contents = fs::read_to_string(&path).expect("read config");
+
+        let bun = contents.find("bun = \"1.2.0\"").expect("bun entry");
+        let node = contents.find("node = \"22.0.0\"").expect("node entry");
+        let python = contents.find("python = \"3.12.1\"").expect("python entry");
+        assert!(bun < node && node < python);
     }
 
     #[test]

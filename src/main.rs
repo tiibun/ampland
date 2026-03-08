@@ -9,7 +9,7 @@ mod paths;
 mod resolve;
 mod shim;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -17,7 +17,7 @@ use semver::Version;
 
 use crate::cache::Cache;
 use crate::cli::{Cli, Command, ConfigCommand, ShimCommand};
-use crate::config::{Config, Scope};
+use crate::config::{Config, Scope, ToolVersions};
 use crate::doctor::run_doctor;
 use crate::error::AppError;
 use crate::installer::install;
@@ -279,6 +279,7 @@ fn run() -> Result<(), AppError> {
                 println!("cache: {}", report.cache_root.display());
                 println!("shims: {}", report.shims_root.display());
                 println!("shims in PATH: {}", report.shims_in_path);
+                println!("shims early in PATH: {}", report.shims_early_in_path);
                 if !report.conflicts.is_empty() {
                     println!("conflicts:");
                     for conflict in report.conflicts {
@@ -609,7 +610,7 @@ fn upsert_scope_tool(config: &mut Config, pattern: &str, tool: &str, version: &s
         }
     }
 
-    let mut tools = HashMap::new();
+    let mut tools = ToolVersions::new();
     tools.insert(tool.to_string(), version.to_string());
     config.scopes.push(Scope {
         pattern: pattern.to_string(),
@@ -622,7 +623,7 @@ mod tests {
     use super::*;
     use crate::config::Global;
 
-    fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+    fn map(entries: &[(&str, &str)]) -> ToolVersions {
         entries
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))

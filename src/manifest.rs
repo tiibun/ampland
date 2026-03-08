@@ -17,6 +17,7 @@ const DEFAULT_MANIFEST_URL: &str =
 const DEFAULT_PUBLIC_KEY_HEX: &str = "";
 const DEFAULT_TTL_HOURS: u64 = 24;
 const MAX_TEXT_BYTES: usize = 20 * 1024 * 1024;
+const MANIFEST_REFRESH_FALLBACK_NOTE: &str = "using cached or embedded manifest";
 const EMBEDDED_TOOL_MANIFESTS: &[&str] = &[
     include_str!("../assets/manifest/node.toml"),
     include_str!("../assets/manifest/python.toml"),
@@ -270,23 +271,34 @@ impl ManifestStore {
 
         let manifest_text = match fetch_text(&url) {
             Ok(text) => text,
-            Err(_) => return Ok(None),
+            Err(err) => {
+                warn_manifest_refresh_failure(&format!("download manifest from {url}"), &err);
+                return Ok(None);
+            }
         };
         let sig_text = match fetch_text(&sig_url) {
             Ok(text) => text,
-            Err(_) => return Ok(None),
+            Err(err) => {
+                warn_manifest_refresh_failure(
+                    &format!("download manifest signature from {sig_url}"),
+                    &err,
+                );
+                return Ok(None);
+            }
         };
-        if verify_signature(public_key, manifest_text.as_bytes(), sig_text.trim()).is_err() {
+        if let Err(err) = verify_signature(public_key, manifest_text.as_bytes(), sig_text.trim()) {
+            warn_manifest_refresh_failure("verify manifest signature", &err);
             return Ok(None);
         }
         let manifest = match Manifest::parse(&manifest_text) {
             Ok(manifest) => manifest,
-            Err(_) => return Ok(None),
+            Err(err) => {
+                warn_manifest_refresh_failure("parse refreshed manifest", &err);
+                return Ok(None);
+            }
         };
-        if self
-            .write_cache(&manifest_text, sig_text.trim(), &manifest)
-            .is_err()
-        {
+        if let Err(err) = self.write_cache(&manifest_text, sig_text.trim(), &manifest) {
+            warn_manifest_refresh_failure("write refreshed manifest cache", &err);
             return Ok(None);
         }
         Ok(Some(manifest))
@@ -458,6 +470,14 @@ fn fetch_text(url: &str) -> Result<String, AppError> {
         message: format!("failed to fetch {url}: {err}"),
     })?;
     read_response_text(response, url)
+}
+
+fn warn_manifest_refresh_failure(stage: &str, err: &AppError) {
+    eprintln!("{}", format_manifest_refresh_warning(stage, err));
+}
+
+fn format_manifest_refresh_warning(stage: &str, err: &AppError) -> String {
+    format!("warning: failed to {stage}: {err}; {MANIFEST_REFRESH_FALLBACK_NOTE}")
 }
 
 fn read_response_text(response: ureq::Response, url: &str) -> Result<String, AppError> {
@@ -686,5 +706,18 @@ name = "node"
         let err = verify_signature(&[1, 2, 3], b"msg", "00").expect_err("invalid key length");
         assert!(matches!(err, AppError::Other { .. }));
         assert!(fetch_text("://bad-url").is_err());
+    }
+
+    #[test]
+    fn manifest_refresh_warning_is_actionable() {
+        let warning = format_manifest_refresh_warning(
+            "download manifest from https://example.com/installers.toml",
+            &AppError::Other {
+                message: "network down".to_string(),
+            },
+        );
+        assert!(warning.contains("warning: failed to download manifest"));
+        assert!(warning.contains(MANIFEST_REFRESH_FALLBACK_NOTE));
+        assert!(warning.contains("network down"));
     }
 }
