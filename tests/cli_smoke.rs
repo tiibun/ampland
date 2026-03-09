@@ -21,6 +21,42 @@ fn list_command_runs_successfully() {
 }
 
 #[test]
+fn activate_outputs_fish_syntax() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let shims = temp.path().join("shim dir $PATH");
+    fs::create_dir_all(&shims).expect("create shims dir");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .env("SHELL", "/usr/bin/fish")
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("--shims-dir")
+        .arg(&shims)
+        .arg("activate")
+        .output()
+        .expect("run ampland");
+
+    assert!(output.status.success());
+
+    let escaped_shims = shims
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`");
+
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("set -gx PATH \"{}\" $PATH\n", escaped_shims)
+    );
+}
+
+#[test]
 fn uninstall_missing_version_fails() {
     let temp = tempfile::tempdir().expect("tempdir");
     let config = temp.path().join("config.toml");

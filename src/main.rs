@@ -340,6 +340,10 @@ fn run() -> Result<(), AppError> {
                         let value = escape_for_double_quotes(&shims_value);
                         println!("export PATH=\"{}:$PATH\"", value);
                     }
+                    ShellKind::Fish => {
+                        let value = escape_for_double_quotes(&shims_value);
+                        println!("set -gx PATH \"{}\" $PATH", value);
+                    }
                     ShellKind::PowerShell => {
                         let value = escape_for_powershell_double_quotes(&shims_value);
                         let separator = if cfg!(windows) { ";" } else { ":" };
@@ -438,6 +442,7 @@ fn resolve_path(global: Option<PathBuf>, command: Option<PathBuf>) -> Result<Pat
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum ShellKind {
     Posix,
+    Fish,
     PowerShell,
     Cmd,
 }
@@ -457,6 +462,9 @@ fn detect_shell_kind() -> ShellKind {
 
     if let Ok(shell) = std::env::var("SHELL") {
         let shell = shell.to_ascii_lowercase();
+        if shell.contains("fish") {
+            return ShellKind::Fish;
+        }
         if shell.contains("pwsh") || shell.contains("powershell") {
             return ShellKind::PowerShell;
         }
