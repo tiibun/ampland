@@ -94,32 +94,33 @@ cargo run -- <args>
 
 ## Quick start
 
-Initialize PATH via `ampland activate` before running commands.
+Initialize PATH via `ampland activate <shell>` before running commands.
 
+Pass one of `fish`, `posix`, `powershell`, or `cmd`.
 To make it permanent, add it to your shell rc file or the Windows user PATH.
 
 macOS and Linux (bash/zsh):
 
 ```
-eval "$(ampland activate)"
+eval "$(ampland activate posix)"
 ```
 
 Add to `~/.bashrc` or `~/.zshrc`:
 
 ```sh
-echo 'eval "$(ampland activate)"' >> ~/.bashrc
+echo 'eval "$(ampland activate posix)"' >> ~/.bashrc
 ```
 
 macOS and Linux (fish):
 
 ```
-eval (ampland activate)
+eval (ampland activate fish)
 ```
 
 Add to `~/.config/fish/config.fish`:
 
 ```fish
-echo 'eval (ampland activate)' >> ~/.config/fish/config.fish
+echo 'eval (ampland activate fish)' >> ~/.config/fish/config.fish
 ```
 
 Windows (PowerShell):

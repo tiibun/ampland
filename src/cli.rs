@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(name = "ampland", version, about = "Tool manager with native shims")]
@@ -56,8 +56,11 @@ pub enum Command {
     Which { tool: String },
     #[command(about = "Explain tool resolution")]
     Explain { tool: String },
-    #[command(about = "Print shell code to add shims to PATH")]
-    Activate,
+    #[command(about = "Print shell code to add shims to PATH for a specific shell")]
+    Activate {
+        #[arg(value_enum)]
+        shell: ActivateShell,
+    },
     #[command(about = "Manage shims")]
     Shim {
         #[command(subcommand)]
@@ -68,6 +71,15 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
+pub enum ActivateShell {
+    Posix,
+    Fish,
+    #[value(name = "powershell", alias = "pwsh")]
+    PowerShell,
+    Cmd,
 }
 
 #[derive(Debug, Subcommand)]

@@ -16,7 +16,7 @@ use clap::Parser;
 use semver::Version;
 
 use crate::cache::Cache;
-use crate::cli::{Cli, Command, ConfigCommand, ShimCommand};
+use crate::cli::{ActivateShell, Cli, Command, ConfigCommand, ShimCommand};
 use crate::config::{Config, Scope, ToolVersions};
 use crate::doctor::run_doctor;
 use crate::error::AppError;
@@ -331,9 +331,9 @@ fn run() -> Result<(), AppError> {
                 }
             }
         }
-        Command::Activate => {
+        Command::Activate { shell } => {
             if !cli.quiet {
-                let shell = detect_shell_kind();
+                let shell = ShellKind::from(shell);
                 let shims_value = shims_root.to_string_lossy();
                 match shell {
                     ShellKind::Posix => {
@@ -447,29 +447,15 @@ enum ShellKind {
     Cmd,
 }
 
-fn detect_shell_kind() -> ShellKind {
-    if cfg!(windows) {
-        if std::env::var("PROMPT").is_ok() {
-            return ShellKind::Cmd;
-        }
-        if std::env::var("POWERSHELL_DISTRIBUTION_CHANNEL").is_ok()
-            || std::env::var("PSExecutionPolicyPreference").is_ok()
-        {
-            return ShellKind::PowerShell;
-        }
-        return ShellKind::PowerShell;
-    }
-
-    if let Ok(shell) = std::env::var("SHELL") {
-        let shell = shell.to_ascii_lowercase();
-        if shell.contains("fish") {
-            return ShellKind::Fish;
-        }
-        if shell.contains("pwsh") || shell.contains("powershell") {
-            return ShellKind::PowerShell;
+impl From<ActivateShell> for ShellKind {
+    fn from(value: ActivateShell) -> Self {
+        match value {
+            ActivateShell::Posix => Self::Posix,
+            ActivateShell::Fish => Self::Fish,
+            ActivateShell::PowerShell => Self::PowerShell,
+            ActivateShell::Cmd => Self::Cmd,
         }
     }
-    ShellKind::Posix
 }
 
 fn escape_for_double_quotes(value: &str) -> String {

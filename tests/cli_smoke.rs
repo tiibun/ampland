@@ -21,7 +21,30 @@ fn list_command_runs_successfully() {
 }
 
 #[test]
-fn activate_outputs_fish_syntax() {
+fn activate_requires_shell_argument() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("activate")
+        .output()
+        .expect("run ampland");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("<SHELL>"),
+        "expected clap to require a shell argument, got: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn activate_positional_shell_outputs_fish_syntax() {
     let temp = tempfile::tempdir().expect("tempdir");
     let config = temp.path().join("config.toml");
     let cache = temp.path().join("cache");
@@ -29,7 +52,7 @@ fn activate_outputs_fish_syntax() {
     fs::create_dir_all(&shims).expect("create shims dir");
 
     let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
-        .env("SHELL", "/usr/bin/fish")
+        .env("SHELL", "/bin/zsh")
         .arg("--config")
         .arg(&config)
         .arg("--cache-dir")
@@ -37,6 +60,7 @@ fn activate_outputs_fish_syntax() {
         .arg("--shims-dir")
         .arg(&shims)
         .arg("activate")
+        .arg("fish")
         .output()
         .expect("run ampland");
 
