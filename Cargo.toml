@@ -28,6 +28,12 @@ ureq = { version = "2.9.6", features = ["tls"] }
 xz2 = "0.1.7"
 zip = "0.6.6"
 
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
 [[bin]]
 name = "manifest-generate"
 path = "src/bin/manifest_generate/main.rs"
