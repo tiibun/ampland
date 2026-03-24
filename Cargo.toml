@@ -22,7 +22,7 @@ ed25519-dalek = "2.1.1"
 flate2 = "1.0.28"
 sha2 = "0.10.8"
 time = { version = "0.3.47", features = ["formatting"] }
-tar = "0.4.40"
+tar = "0.4.45"
 tempfile = "3.10.1"
 ureq = { version = "2.9.6", features = ["tls"] }
 xz2 = "0.1.7"
