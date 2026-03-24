@@ -24,7 +24,7 @@ sha2 = "0.10.8"
 time = { version = "0.3.47", features = ["formatting"] }
 tar = "0.4.40"
 tempfile = "3.10.1"
-ureq = { version = "2.9.6", default-features = false, features = ["native-tls", "gzip"] }
+ureq = { version = "2.9.6", features = ["tls"] }
 xz2 = "0.1.7"
 zip = "0.6.6"
 
