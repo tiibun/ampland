@@ -1,10 +1,75 @@
 version = 1
-generated_at = "2026-03-12T04:08:57.340675858Z"
+generated_at = "2026-03-27T00:46:13.923029682Z"
 
 [[tool]]
 name = "node"
 vendor = "nodejs"
-default_version = "25.8.1"
+default_version = "25.8.2"
+
+[[tool.version]]
+ver = "25.8.2"
+platform = "macos"
+arch = "arm64"
+url = "https://nodejs.org/dist/v25.8.2/node-v25.8.2-darwin-arm64.tar.gz"
+sha256 = "fb8dabfda3232ef90d992e6439824fc3237356c04d182f3fa883bebeef31e871"
+format = "tar.gz"
+bin_paths = [
+    "node-v25.8.2-darwin-arm64/bin/node",
+    "node-v25.8.2-darwin-arm64/bin/npm",
+    "node-v25.8.2-darwin-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.8.2"
+platform = "macos"
+arch = "x64"
+url = "https://nodejs.org/dist/v25.8.2/node-v25.8.2-darwin-x64.tar.gz"
+sha256 = "530ffb419789f843215375a65b8fcf4cf010735e99276f512a241a31ba8e5e13"
+format = "tar.gz"
+bin_paths = [
+    "node-v25.8.2-darwin-x64/bin/node",
+    "node-v25.8.2-darwin-x64/bin/npm",
+    "node-v25.8.2-darwin-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.8.2"
+platform = "linux"
+arch = "arm64"
+url = "https://nodejs.org/dist/v25.8.2/node-v25.8.2-linux-arm64.tar.xz"
+sha256 = "b7e8e0c9d48b6d9a43cf6e8d3960127473db001d60e964cb5e955e95603666eb"
+format = "tar.xz"
+bin_paths = [
+    "node-v25.8.2-linux-arm64/bin/node",
+    "node-v25.8.2-linux-arm64/bin/npm",
+    "node-v25.8.2-linux-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.8.2"
+platform = "linux"
+arch = "x64"
+url = "https://nodejs.org/dist/v25.8.2/node-v25.8.2-linux-x64.tar.xz"
+sha256 = "13a4c88c391aade2b7afba799ff27d09773b04e8a6c27f52908f79ff0e3787f5"
+format = "tar.xz"
+bin_paths = [
+    "node-v25.8.2-linux-x64/bin/node",
+    "node-v25.8.2-linux-x64/bin/npm",
+    "node-v25.8.2-linux-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.8.2"
+platform = "windows"
+arch = "x64"
+url = "https://nodejs.org/dist/v25.8.2/node-v25.8.2-win-x64.zip"
+sha256 = "51815d5b0256b947d27d614de04060fcfdbdb830d2c86e63e6f33dbf7964cca7"
+format = "zip"
+bin_paths = [
+    "node-v25.8.2-win-x64/node.exe",
+    "node-v25.8.2-win-x64/npm.cmd",
+    "node-v25.8.2-win-x64/npx.cmd",
+]
 
 [[tool.version]]
 ver = "25.8.1"
@@ -784,6 +849,71 @@ bin_paths = [
     "node-v25.0.0-win-x64/node.exe",
     "node-v25.0.0-win-x64/npm.cmd",
     "node-v25.0.0-win-x64/npx.cmd",
+]
+
+[[tool.version]]
+ver = "24.14.1"
+platform = "macos"
+arch = "arm64"
+url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-darwin-arm64.tar.gz"
+sha256 = "25495ff85bd89e2d8a24d88566d7e2f827c6b0d3d872b2cebf75371f93fcb1fe"
+format = "tar.gz"
+bin_paths = [
+    "node-v24.14.1-darwin-arm64/bin/node",
+    "node-v24.14.1-darwin-arm64/bin/npm",
+    "node-v24.14.1-darwin-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "24.14.1"
+platform = "macos"
+arch = "x64"
+url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-darwin-x64.tar.gz"
+sha256 = "2526230ad7d922be82d4fdb1e7ee1e84303e133e3b4b0ec4c2897ab31de0253d"
+format = "tar.gz"
+bin_paths = [
+    "node-v24.14.1-darwin-x64/bin/node",
+    "node-v24.14.1-darwin-x64/bin/npm",
+    "node-v24.14.1-darwin-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "24.14.1"
+platform = "linux"
+arch = "arm64"
+url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-linux-arm64.tar.xz"
+sha256 = "71e427e28b78846f201d4d5ecc30cb13d1508ca099ef3871889a1256c7d6f67e"
+format = "tar.xz"
+bin_paths = [
+    "node-v24.14.1-linux-arm64/bin/node",
+    "node-v24.14.1-linux-arm64/bin/npm",
+    "node-v24.14.1-linux-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "24.14.1"
+platform = "linux"
+arch = "x64"
+url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-linux-x64.tar.xz"
+sha256 = "84d38715d449447117d05c3e71acd78daa49d5b1bfa8aacf610303920c3322be"
+format = "tar.xz"
+bin_paths = [
+    "node-v24.14.1-linux-x64/bin/node",
+    "node-v24.14.1-linux-x64/bin/npm",
+    "node-v24.14.1-linux-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "24.14.1"
+platform = "windows"
+arch = "x64"
+url = "https://nodejs.org/dist/v24.14.1/node-v24.14.1-win-x64.zip"
+sha256 = "6e50ce5498c0cebc20fd39ab3ff5df836ed2f8a31aa093cecad8497cff126d70"
+format = "zip"
+bin_paths = [
+    "node-v24.14.1-win-x64/node.exe",
+    "node-v24.14.1-win-x64/npm.cmd",
+    "node-v24.14.1-win-x64/npx.cmd",
 ]
 
 [[tool.version]]
@@ -2084,6 +2214,71 @@ bin_paths = [
     "node-v24.0.0-win-x64/node.exe",
     "node-v24.0.0-win-x64/npm.cmd",
     "node-v24.0.0-win-x64/npx.cmd",
+]
+
+[[tool.version]]
+ver = "22.22.2"
+platform = "macos"
+arch = "arm64"
+url = "https://nodejs.org/dist/v22.22.2/node-v22.22.2-darwin-arm64.tar.gz"
+sha256 = "db4b275b83736df67533529a18cc55de2549a8329ace6c7bcc68f8d22d3c9000"
+format = "tar.gz"
+bin_paths = [
+    "node-v22.22.2-darwin-arm64/bin/node",
+    "node-v22.22.2-darwin-arm64/bin/npm",
+    "node-v22.22.2-darwin-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "22.22.2"
+platform = "macos"
+arch = "x64"
+url = "https://nodejs.org/dist/v22.22.2/node-v22.22.2-darwin-x64.tar.gz"
+sha256 = "12a6abb9c2902cf48a21120da13f87fde1ed1b71a13330712949e8db818708ba"
+format = "tar.gz"
+bin_paths = [
+    "node-v22.22.2-darwin-x64/bin/node",
+    "node-v22.22.2-darwin-x64/bin/npm",
+    "node-v22.22.2-darwin-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "22.22.2"
+platform = "linux"
+arch = "arm64"
+url = "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-arm64.tar.xz"
+sha256 = "e9e1930fd321a470e29bb68f30318bf58e3ecb4acb4f1533fb19c58328a091fe"
+format = "tar.xz"
+bin_paths = [
+    "node-v22.22.2-linux-arm64/bin/node",
+    "node-v22.22.2-linux-arm64/bin/npm",
+    "node-v22.22.2-linux-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "22.22.2"
+platform = "linux"
+arch = "x64"
+url = "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz"
+sha256 = "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a"
+format = "tar.xz"
+bin_paths = [
+    "node-v22.22.2-linux-x64/bin/node",
+    "node-v22.22.2-linux-x64/bin/npm",
+    "node-v22.22.2-linux-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "22.22.2"
+platform = "windows"
+arch = "x64"
+url = "https://nodejs.org/dist/v22.22.2/node-v22.22.2-win-x64.zip"
+sha256 = "7c93e9d92bf68c07182b471aa187e35ee6cd08ef0f24ab060dfff605fcc1c57c"
+format = "zip"
+bin_paths = [
+    "node-v22.22.2-win-x64/node.exe",
+    "node-v22.22.2-win-x64/npm.cmd",
+    "node-v22.22.2-win-x64/npx.cmd",
 ]
 
 [[tool.version]]
@@ -4034,6 +4229,71 @@ bin_paths = [
     "node-v22.0.0-win-x64/node.exe",
     "node-v22.0.0-win-x64/npm.cmd",
     "node-v22.0.0-win-x64/npx.cmd",
+]
+
+[[tool.version]]
+ver = "20.20.2"
+platform = "macos"
+arch = "arm64"
+url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-arm64.tar.gz"
+sha256 = "466e05f3477c20dfb723054dfebffe55bc74660ee77f612166fca121dacb65b6"
+format = "tar.gz"
+bin_paths = [
+    "node-v20.20.2-darwin-arm64/bin/node",
+    "node-v20.20.2-darwin-arm64/bin/npm",
+    "node-v20.20.2-darwin-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "20.20.2"
+platform = "macos"
+arch = "x64"
+url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-x64.tar.gz"
+sha256 = "8be6f5e4bb128c82774f8a0b8d7a1cc1365a7977d9657cece0ca647b3fe04e61"
+format = "tar.gz"
+bin_paths = [
+    "node-v20.20.2-darwin-x64/bin/node",
+    "node-v20.20.2-darwin-x64/bin/npm",
+    "node-v20.20.2-darwin-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "20.20.2"
+platform = "linux"
+arch = "arm64"
+url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-arm64.tar.xz"
+sha256 = "73093db209e4e9e09dd7d15a47aeaab1b74833830df03efa5f942a1122c5fa71"
+format = "tar.xz"
+bin_paths = [
+    "node-v20.20.2-linux-arm64/bin/node",
+    "node-v20.20.2-linux-arm64/bin/npm",
+    "node-v20.20.2-linux-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "20.20.2"
+platform = "linux"
+arch = "x64"
+url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz"
+sha256 = "df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d"
+format = "tar.xz"
+bin_paths = [
+    "node-v20.20.2-linux-x64/bin/node",
+    "node-v20.20.2-linux-x64/bin/npm",
+    "node-v20.20.2-linux-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "20.20.2"
+platform = "windows"
+arch = "x64"
+url = "https://nodejs.org/dist/v20.20.2/node-v20.20.2-win-x64.zip"
+sha256 = "dc3700fdd57a63eedb8fd7e3c7baaa32e6a740a1b904167ff4204bc68ed8bf77"
+format = "zip"
+bin_paths = [
+    "node-v20.20.2-win-x64/node.exe",
+    "node-v20.20.2-win-x64/npm.cmd",
+    "node-v20.20.2-win-x64/npx.cmd",
 ]
 
 [[tool.version]]
