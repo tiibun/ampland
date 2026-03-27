@@ -57,8 +57,8 @@ pub fn rebuild_shims(
     }
 
     let mut created = Vec::new();
-    for name in shim_names {
-        let shim_path = shim_path_for(&shims_root, &name);
+    for name in &expected_names {
+        let shim_path = shim_path_for(&shims_root, name);
         write_embedded_shim(&shim_path)?;
         created.push(shim_path);
     }
