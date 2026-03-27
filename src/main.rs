@@ -69,11 +69,9 @@ fn run() -> Result<(), AppError> {
             // If tool is None, read from .tool-versions
             let tools_to_set = if let Some(tool) = tool {
                 let (tool, version) = normalize_tool_version_arg(tool, version);
-                let Some(version) = version else {
-                    return Err(AppError::Config {
-                        message: "use requires a version (e.g. ampland use node 22 or node@22)"
-                            .to_string(),
-                    });
+                let version = match version {
+                    Some(v) => v,
+                    None => resolve_latest_version(&manifest, &tool, &target)?,
                 };
                 vec![(tool, version)]
             } else {
@@ -157,14 +155,19 @@ fn run() -> Result<(), AppError> {
         }
         Command::Uninstall { tool, version } => {
             let (tool, version) = normalize_tool_version_arg(tool, version);
-            let Some(version) = version else {
-                return Err(AppError::Config {
-                    message:
-                        "uninstall requires a version (e.g. ampland uninstall node 22 or node@22)"
-                            .to_string(),
-                });
-            };
             let cwd = resolve_path(cli.path.clone(), None)?;
+            let version = match version {
+                Some(v) => v,
+                None => {
+                    resolve_tool(&config, &cwd, &tool)
+                        .map(|r| r.version)
+                        .map_err(|_| AppError::Config {
+                            message: format!(
+                                "no active version found for {tool}; specify a version (e.g. ampland uninstall {tool} 22)"
+                            ),
+                        })?
+                }
+            };
             let mut usages = config.is_tool_version_in_use(&tool, &version);
             let mut removed_from_current_scope = false;
             if !usages.is_empty() {
