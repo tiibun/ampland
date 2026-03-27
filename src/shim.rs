@@ -88,13 +88,13 @@ pub fn run_as_shim(tool: &str) -> Result<(), AppError> {
     let cache = Cache::new(cache_dir()?);
     let target = Target::current()?;
     let manifest = ManifestStore::new(cache.root(), &config.manifest).load()?;
-    sync_runtime_shims(&config, &cwd, &cache, None)?;
+    sync_runtime_shims(&cache, None)?;
     let resolution = resolve_bin_path(&config, &cwd, tool, &cache, &manifest, &target)?;
 
     let args: Vec<String> = env::args().skip(1).collect();
     let exit_code = exec_tool(&resolution.path, &args)?;
     if exit_code == 0 {
-        sync_runtime_shims(&config, &cwd, &cache, None)?;
+        sync_runtime_shims(&cache, None)?;
     }
     std::process::exit(exit_code);
 }
@@ -122,8 +122,6 @@ fn exit_status_code(status: &ExitStatus) -> i32 {
 }
 
 fn sync_runtime_shims(
-    config: &Config,
-    cwd: &Path,
     cache: &Cache,
     shims_override: Option<&Path>,
 ) -> Result<Vec<PathBuf>, AppError> {
@@ -134,11 +132,11 @@ fn sync_runtime_shims(
     fs::create_dir_all(&shims_root)?;
     let main_exe = current_main_executable()?;
     write_main_executable_path(&shims_root, &main_exe)?;
-    let resolved = resolve_tools(config, cwd)?;
     let mut names = BTreeSet::new();
-    for (tool, version) in resolved.tools {
-        let runtime_names = list_runtime_bin_names(cache, &tool, &version)?;
-        names.extend(runtime_names);
+    for (tool, versions) in cache.list_installed()? {
+        for version in versions {
+            names.extend(list_runtime_bin_names(cache, &tool, &version)?);
+        }
     }
 
     let mut managed = load_managed_shims(&shims_root)?;
@@ -742,21 +740,16 @@ name = "node"
         let temp = tempfile::tempdir().expect("tempdir");
         let cache = Cache::new(temp.path().join("cache"));
         let shims = temp.path().join("shims");
-        let config = Config {
-            global: Global {
-                tools: map(&[("node", "24.3.1")]),
-            },
-            ..Default::default()
-        };
-        let bin_dir = cache.tool_version_dir("node", "24.3.1").join("bin");
+        let version_dir = cache.tool_version_dir("node", "24.3.1");
+        let bin_dir = version_dir.join("bin");
         fs::create_dir_all(&bin_dir).expect("mkdir");
+        fs::write(version_dir.join(".installed"), b"").expect("mark installed");
         fs::write(bin_dir.join("node"), b"node").expect("write node");
         fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
         mark_executable(&bin_dir.join("node"));
         mark_executable(&bin_dir.join("pnpm"));
 
-        let created = sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
-            .expect("sync shims");
+        let created = sync_runtime_shims(&cache, Some(&shims)).expect("sync shims");
 
         assert_eq!(created.len(), 2);
         assert!(shim_path_for(&shims, "node").exists());
@@ -772,14 +765,10 @@ name = "node"
         let temp = tempfile::tempdir().expect("tempdir");
         let cache = Cache::new(temp.path().join("cache"));
         let shims = temp.path().join("shims");
-        let config = Config {
-            global: Global {
-                tools: map(&[("node", "24.3.1")]),
-            },
-            ..Default::default()
-        };
-        let bin_dir = cache.tool_version_dir("node", "24.3.1").join("bin");
+        let version_dir = cache.tool_version_dir("node", "24.3.1");
+        let bin_dir = version_dir.join("bin");
         fs::create_dir_all(&bin_dir).expect("mkdir");
+        fs::write(version_dir.join(".installed"), b"").expect("mark installed");
         fs::write(bin_dir.join("node"), b"node").expect("write node");
         mark_executable(&bin_dir.join("node"));
 
@@ -787,8 +776,7 @@ name = "node"
         let old_shim = shim_path_for(&shims, "node");
         fs::write(&old_shim, b"old copied ampland").expect("write old shim");
 
-        let created = sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
-            .expect("sync shims");
+        let created = sync_runtime_shims(&cache, Some(&shims)).expect("sync shims");
 
         assert_eq!(created, vec![old_shim.clone()]);
         assert_eq!(fs::read(&old_shim).expect("read shim"), EMBEDDED_SHIM);
@@ -799,26 +787,20 @@ name = "node"
         let temp = tempfile::tempdir().expect("tempdir");
         let cache = Cache::new(temp.path().join("cache"));
         let shims = temp.path().join("shims");
-        let config = Config {
-            global: Global {
-                tools: map(&[("node", "24.3.1")]),
-            },
-            ..Default::default()
-        };
-        let bin_dir = cache.tool_version_dir("node", "24.3.1").join("bin");
+        let version_dir = cache.tool_version_dir("node", "24.3.1");
+        let bin_dir = version_dir.join("bin");
         fs::create_dir_all(&bin_dir).expect("mkdir");
+        fs::write(version_dir.join(".installed"), b"").expect("mark installed");
         fs::write(bin_dir.join("node"), b"node").expect("write node");
         fs::write(bin_dir.join("pnpm"), b"pnpm").expect("write pnpm");
         mark_executable(&bin_dir.join("node"));
         mark_executable(&bin_dir.join("pnpm"));
-        sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
-            .expect("initial sync");
+        sync_runtime_shims(&cache, Some(&shims)).expect("initial sync");
         let unmanaged = shim_path_for(&shims, "python");
         fs::write(&unmanaged, b"external").expect("write unmanaged");
 
         fs::remove_file(bin_dir.join("pnpm")).expect("remove pnpm bin");
-        sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
-            .expect("second sync");
+        sync_runtime_shims(&cache, Some(&shims)).expect("second sync");
 
         assert!(shim_path_for(&shims, "node").exists());
         assert!(!shim_path_for(&shims, "pnpm").exists());
@@ -833,15 +815,10 @@ name = "node"
         let temp = tempfile::tempdir().expect("tempdir");
         let cache = Cache::new(temp.path().join("cache"));
         let shims = temp.path().join("shims");
-        let config = Config {
-            global: Global {
-                tools: map(&[("node", "24.3.1")]),
-            },
-            ..Default::default()
-        };
 
         let version_dir = cache.tool_version_dir("node", "24.3.1");
         fs::create_dir_all(&version_dir).expect("mkdir");
+        fs::write(version_dir.join(".installed"), b"").expect("mark installed");
 
         let node_bin = version_dir.join("node");
         fs::write(&node_bin, b"node").expect("write node");
@@ -855,8 +832,7 @@ name = "node"
         readme_perms.set_mode(0o644);
         fs::set_permissions(&readme, readme_perms).expect("chmod readme");
 
-        sync_runtime_shims(&config, Path::new("workspace"), &cache, Some(&shims))
-            .expect("sync shims");
+        sync_runtime_shims(&cache, Some(&shims)).expect("sync shims");
 
         assert!(shim_path_for(&shims, "node").exists());
         assert!(!shim_path_for(&shims, "README").exists());
