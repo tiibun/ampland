@@ -273,11 +273,22 @@ pub fn resolve_bin_path(
     if let Some(version) = resolved.tools.get(bin_name) {
         return resolve_bin_for_tool(bin_name, version, bin_name, cache, manifest, target, false)
             .and_then(|resolution| {
-                resolution.ok_or_else(|| AppError::Cache {
-                    message: format!(
+                resolution.ok_or_else(|| {
+                    let found_in = find_installed_versions_with_bin(bin_name, cache)
+                        .unwrap_or_default();
+                    let base = format!(
                         "bin '{bin_name}' not found for {bin_name}@{version} ({}/{})",
                         target.platform, target.arch
-                    ),
+                    );
+                    let message = if found_in.is_empty() {
+                        base
+                    } else {
+                        format!(
+                            "{base}\nFound in: {}\nHint: switch to a directory using that version, or run 'ampland use <version>' here.",
+                            found_in.join(", ")
+                        )
+                    };
+                    AppError::Cache { message }
                 })
             });
     }
@@ -292,9 +303,32 @@ pub fn resolve_bin_path(
         }
     }
 
-    Err(AppError::Config {
-        message: format!("no version configured for {bin_name}"),
-    })
+    let found_in = find_installed_versions_with_bin(bin_name, cache)?;
+    let message = if found_in.is_empty() {
+        format!("no version configured for {bin_name}")
+    } else {
+        format!(
+            "'{bin_name}' is not available in the current context.\nFound in: {}\nHint: switch to a directory using that version, or run 'ampland use <version>' here.",
+            found_in.join(", ")
+        )
+    };
+    Err(AppError::Config { message })
+}
+
+fn find_installed_versions_with_bin(
+    bin_name: &str,
+    cache: &Cache,
+) -> Result<Vec<String>, AppError> {
+    let mut found = Vec::new();
+    for (tool, versions) in cache.list_installed()? {
+        for version in versions {
+            let version_dir = cache.tool_version_dir(&tool, &version);
+            if find_runtime_bin(&version_dir, bin_name)?.is_some() {
+                found.push(format!("{tool}@{version}"));
+            }
+        }
+    }
+    Ok(found)
 }
 
 fn resolve_bin_for_tool(
@@ -956,5 +990,84 @@ name = "node"
         )
         .expect("resolve runtime bin");
         assert_eq!(resolved.path, tsc_bin);
+    }
+
+    #[test]
+    fn find_installed_versions_with_bin_returns_matching_versions() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+
+        // node@24 has eslint installed
+        let eslint = cache
+            .tool_version_dir("node", "24.0.0")
+            .join("bin")
+            .join("eslint");
+        fs::create_dir_all(eslint.parent().expect("parent")).expect("mkdir");
+        fs::write(&eslint, b"x").expect("write");
+        mark_executable(&eslint);
+        fs::write(
+            cache.tool_version_dir("node", "24.0.0").join(".installed"),
+            b"",
+        )
+        .expect("marker");
+
+        // node@22 does NOT have eslint
+        let node22_dir = cache.tool_version_dir("node", "22.0.0");
+        fs::create_dir_all(&node22_dir).expect("mkdir");
+        fs::write(node22_dir.join(".installed"), b"").expect("marker");
+
+        let found =
+            find_installed_versions_with_bin("eslint", &cache).expect("find_installed");
+        assert_eq!(found, vec!["node@24.0.0".to_string()]);
+    }
+
+    #[test]
+    fn resolve_bin_path_suggests_other_version_when_bin_not_in_current_context() {
+        // Current context: node@22 (no eslint)
+        // Installed: node@24 has eslint
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", "22.0.0")]),
+            },
+            ..Default::default()
+        };
+        let manifest = sample_manifest();
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+
+        // Install node@24 with eslint
+        let eslint = cache
+            .tool_version_dir("node", "24.0.0")
+            .join("bin")
+            .join("eslint");
+        fs::create_dir_all(eslint.parent().expect("parent")).expect("mkdir");
+        fs::write(&eslint, b"x").expect("write");
+        mark_executable(&eslint);
+        fs::write(
+            cache.tool_version_dir("node", "24.0.0").join(".installed"),
+            b"",
+        )
+        .expect("marker");
+
+        let result = resolve_bin_path(
+            &config,
+            Path::new("workspace"),
+            "eslint",
+            &cache,
+            &manifest,
+            &target,
+        );
+
+        let msg = match result {
+            Err(AppError::Config { message }) => message,
+            Ok(_) => panic!("expected error"),
+            Err(other) => panic!("unexpected error: {other:?}"),
+        };
+        assert!(msg.contains("node@24.0.0"), "hint missing: {msg}");
+        assert!(msg.contains("Hint:"), "hint line missing: {msg}");
     }
 }
