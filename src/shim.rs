@@ -35,7 +35,13 @@ pub fn rebuild_shims(
     let manifest = ManifestStore::new(cache_root, &config.manifest).load()?;
     let target = Target::current()?;
     let shim_names = list_shim_names(config, &manifest, &target);
-    let expected_names: BTreeSet<String> = shim_names.iter().cloned().collect();
+    let mut expected_names: BTreeSet<String> = shim_names.iter().cloned().collect();
+    let cache = Cache::new(cache_root.to_path_buf());
+    for (tool, versions) in cache.list_installed()? {
+        for version in versions {
+            expected_names.extend(list_runtime_bin_names(&cache, &tool, &version)?);
+        }
+    }
     let mut managed = load_managed_shims(&shims_root)?;
     for stale in managed
         .iter()
