@@ -4,13 +4,13 @@ use serde::Deserialize;
 use serde_json;
 
 #[derive(Debug, Deserialize)]
-struct Release {
+pub(crate) struct Release {
     tag_name: String,
     assets: Vec<Asset>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Asset {
+pub(crate) struct Asset {
     name: String,
     browser_download_url: String,
 }
