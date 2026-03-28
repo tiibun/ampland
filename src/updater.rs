@@ -425,15 +425,6 @@ mod tests {
         assert!(replace_binary(&missing, &target, "0.3.0").is_err());
     }
 
-    fn make_release_json(tag: &str, asset_url: &str, sha256_url: &str) -> String {
-        format!(
-            r#"{{"tag_name":"{tag}","assets":[
-                {{"name":"ampland-macos-arm64","browser_download_url":"{asset_url}"}},
-                {{"name":"ampland-macos-arm64.sha256","browser_download_url":"{sha256_url}"}}
-            ]}}"#
-        )
-    }
-
     #[test]
     fn self_update_already_up_to_date_when_same_version() {
         let current = CURRENT_VERSION;
