@@ -118,6 +118,25 @@ fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+#[allow(dead_code)]
+fn replace_binary(temp_path: &Path, target: &Path, new_ver: &str) -> Result<(), AppError> {
+    std::fs::rename(temp_path, target).map_err(|err| {
+        #[cfg(windows)]
+        if err.raw_os_error() == Some(32) {
+            // ERROR_SHARING_VIOLATION: binary is locked (running)
+            return AppError::Other {
+                message: format!(
+                    "cannot replace running binary on Windows; download the new version manually: \
+                     https://github.com/tiibun/ampland/releases/tag/v{new_ver}"
+                ),
+            };
+        }
+        AppError::Other {
+            message: format!("failed to replace binary: {err}"),
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +254,27 @@ mod tests {
         let actual_hex = download_with_hash(&url, &dest).expect("download");
         assert_eq!(actual_hex, expected_hex);
         assert!(dest.exists());
+    }
+
+    #[test]
+    fn replace_binary_swaps_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp.path().join("ampland");
+        std::fs::write(&target, b"old").expect("write old");
+
+        let new_bin = temp.path().join("ampland.new.tmp");
+        std::fs::write(&new_bin, b"new").expect("write new");
+
+        replace_binary(&new_bin, &target, "0.3.0").expect("replace");
+        assert_eq!(std::fs::read(&target).expect("read"), b"new");
+        assert!(!new_bin.exists());
+    }
+
+    #[test]
+    fn replace_binary_errors_on_missing_temp() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp.path().join("ampland");
+        let missing = temp.path().join("missing.tmp");
+        assert!(replace_binary(&missing, &target, "0.3.0").is_err());
     }
 }
