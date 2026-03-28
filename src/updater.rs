@@ -42,12 +42,11 @@ fn fetch_release_from(version: Option<&str>, base_url: &str) -> Result<Release, 
             });
         }
         Err(ureq::Error::Status(404, _)) => {
-            return Err(AppError::Other {
-                message: format!(
-                    "release v{} not found on GitHub",
-                    version.map(|v| v.trim_start_matches('v')).unwrap_or("latest")
-                ),
-            });
+            let msg = match version {
+                None => "no releases found on GitHub".to_string(),
+                Some(v) => format!("release v{} not found on GitHub", v.trim_start_matches('v')),
+            };
+            return Err(AppError::Other { message: msg });
         }
         Err(err) => {
             return Err(AppError::Other {
@@ -540,5 +539,27 @@ mod tests {
         // Confirm the prompt was shown
         let output = String::from_utf8(out).unwrap();
         assert!(output.contains("update") || output.contains("downgrade"));
+    }
+
+    #[test]
+    fn fetch_release_404_with_no_version_says_no_releases() {
+        let base_url = serve_status_once("HTTP/1.1 404 Not Found");
+        let err = fetch_release_from(None, &base_url).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no releases found on GitHub"),
+            "expected 'no releases found on GitHub', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn fetch_release_404_with_version_says_version_not_found() {
+        let base_url = serve_status_once("HTTP/1.1 404 Not Found");
+        let err = fetch_release_from(Some("1.2.3"), &base_url).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("release v1.2.3 not found on GitHub"),
+            "expected 'release v1.2.3 not found on GitHub', got: {msg}"
+        );
     }
 }
