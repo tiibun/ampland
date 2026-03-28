@@ -70,11 +70,10 @@ fn fetch_release_from(version: Option<&str>, base_url: &str) -> Result<Release, 
 }
 
 #[allow(dead_code)]
-pub fn fetch_release(version: Option<&str>) -> Result<Release, AppError> {
+fn fetch_release(version: Option<&str>) -> Result<Release, AppError> {
     fetch_release_from(version, "https://api.github.com")
 }
 
-#[allow(dead_code)]
 fn asset_name_for_target(platform: &str, arch: &str) -> Result<String, AppError> {
     match (platform, arch) {
         ("macos", "arm64") => Ok("ampland-macos-arm64".to_string()),
@@ -87,13 +86,11 @@ fn asset_name_for_target(platform: &str, arch: &str) -> Result<String, AppError>
     }
 }
 
-#[allow(dead_code)]
-pub fn asset_name_for_current_target() -> Result<String, AppError> {
+fn asset_name_for_current_target() -> Result<String, AppError> {
     let t = Target::current()?;
     asset_name_for_target(&t.platform, &t.arch)
 }
 
-#[allow(dead_code)]
 fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
     let response = ureq::get(url)
         .set("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
@@ -119,8 +116,7 @@ fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-#[allow(dead_code)]
-#[allow(unused_variables)]
+#[cfg_attr(not(windows), allow(unused_variables))]
 fn replace_binary(temp_path: &Path, target: &Path, new_ver: &str) -> Result<(), AppError> {
     std::fs::rename(temp_path, target).map_err(|err| {
         #[cfg(windows)]
@@ -235,6 +231,16 @@ fn self_update_inner(
     let actual_hash = download_with_hash(&binary_asset.browser_download_url, &tmp_path)
         .map_err(|err| {
             let _ = std::fs::remove_file(&tmp_path);
+            if let AppError::Io { ref message } = err {
+                if message.contains("permission denied") || message.contains("Permission denied") {
+                    return AppError::Other {
+                        message: format!(
+                            "cannot write to {}: permission denied (try sudo)",
+                            exe_dir.display()
+                        ),
+                    };
+                }
+            }
             err
         })?;
 
@@ -450,6 +456,67 @@ mod tests {
         assert!(result.is_ok());
         // When fetching latest and already current, prints "already up to date"
         assert!(String::from_utf8(out).unwrap().contains("already up to date"));
+    }
+
+    fn serve_status_once(status_line: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buf = [0u8; 4096];
+            let _ = std::io::Read::read(&mut stream, &mut buf);
+            let resp = format!("{status_line}\r\nContent-Length: 0\r\n\r\n");
+            std::io::Write::write_all(&mut stream, resp.as_bytes()).expect("write");
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn fetch_release_rate_limit_returns_error() {
+        let base_url = serve_status_once("HTTP/1.1 403 Forbidden");
+        let err = fetch_release_from(None, &base_url).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rate limit"),
+            "expected 'rate limit' in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn self_update_checksum_mismatch_returns_error() {
+        let binary_payload = b"fake-binary-content".to_vec();
+
+        // Serve a sha256 sidecar with a wrong (all-zeros) hash
+        let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+
+        // Server 1: binary download
+        let binary_url = serve_bytes_once(binary_payload);
+
+        // Server 2: sha256 sidecar (wrong hash) — serve_once returns http://addr,
+        // which is used directly as browser_download_url in the release JSON.
+        let sha256_body = format!("{wrong_hash}  ampland-macos-arm64\n");
+        let sha256_base = serve_once(sha256_body);
+        // The sha256 URL must end with the asset name; append a path component.
+        let sha256_url = format!("{sha256_base}/ampland-macos-arm64.sha256");
+
+        // Server 3: release JSON referencing the above URLs
+        let release_body = format!(
+            r#"{{"tag_name":"v99.9.9","assets":[
+                {{"name":"ampland-macos-arm64","browser_download_url":"{binary_url}"}},
+                {{"name":"ampland-macos-arm64.sha256","browser_download_url":"{sha256_url}"}}
+            ]}}"#
+        );
+        let base_url = serve_once(release_body);
+
+        let mut out = Vec::<u8>::new();
+        let mut inp = std::io::Cursor::new(b"" as &[u8]);
+        let result = self_update_inner(Some("99.9.9"), true, &base_url, &mut out, &mut inp);
+        let err = result.expect_err("should fail with checksum mismatch");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("checksum mismatch"),
+            "expected 'checksum mismatch' in error, got: {msg}"
+        );
     }
 
     #[test]
