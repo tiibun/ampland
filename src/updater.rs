@@ -484,6 +484,8 @@ mod tests {
 
     #[test]
     fn self_update_checksum_mismatch_returns_error() {
+        let asset_name = asset_name_for_current_target().unwrap();
+        let sha256_name = format!("{asset_name}.sha256");
         let binary_payload = b"fake-binary-content".to_vec();
 
         // Serve a sha256 sidecar with a wrong (all-zeros) hash
@@ -492,18 +494,16 @@ mod tests {
         // Server 1: binary download
         let binary_url = serve_bytes_once(binary_payload);
 
-        // Server 2: sha256 sidecar (wrong hash) — serve_once returns http://addr,
-        // which is used directly as browser_download_url in the release JSON.
-        let sha256_body = format!("{wrong_hash}  ampland-macos-arm64\n");
+        // Server 2: sha256 sidecar (wrong hash)
+        let sha256_body = format!("{wrong_hash}  {asset_name}\n");
         let sha256_base = serve_once(sha256_body);
-        // The sha256 URL must end with the asset name; append a path component.
-        let sha256_url = format!("{sha256_base}/ampland-macos-arm64.sha256");
+        let sha256_url = format!("{sha256_base}/{sha256_name}");
 
         // Server 3: release JSON referencing the above URLs
         let release_body = format!(
             r#"{{"tag_name":"v99.9.9","assets":[
-                {{"name":"ampland-macos-arm64","browser_download_url":"{binary_url}"}},
-                {{"name":"ampland-macos-arm64.sha256","browser_download_url":"{sha256_url}"}}
+                {{"name":"{asset_name}","browser_download_url":"{binary_url}"}},
+                {{"name":"{sha256_name}","browser_download_url":"{sha256_url}"}}
             ]}}"#
         );
         let base_url = serve_once(release_body);
@@ -523,10 +523,12 @@ mod tests {
     fn self_update_declined_by_user_returns_ok() {
         // User sees prompt for v99.0.0 and types "n" — no download should happen.
         // Only the release JSON server is needed; no binary or sha256 servers.
+        let asset_name = asset_name_for_current_target().unwrap();
+        let sha256_name = format!("{asset_name}.sha256");
         let release_body = format!(
             r#"{{"tag_name":"v99.0.0","assets":[
-                {{"name":"ampland-macos-arm64","browser_download_url":"http://127.0.0.1:1/never"}},
-                {{"name":"ampland-macos-arm64.sha256","browser_download_url":"http://127.0.0.1:1/never.sha256"}}
+                {{"name":"{asset_name}","browser_download_url":"http://127.0.0.1:1/never"}},
+                {{"name":"{sha256_name}","browser_download_url":"http://127.0.0.1:1/never.sha256"}}
             ]}}"#
         );
         let base_url = serve_once(release_body);
