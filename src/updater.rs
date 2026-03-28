@@ -119,6 +119,7 @@ fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
 }
 
 #[allow(dead_code)]
+#[allow(unused_variables)]
 fn replace_binary(temp_path: &Path, target: &Path, new_ver: &str) -> Result<(), AppError> {
     std::fs::rename(temp_path, target).map_err(|err| {
         #[cfg(windows)]
