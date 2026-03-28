@@ -376,7 +376,9 @@ fn run() -> Result<(), AppError> {
                 }
             }
         },
-        Command::Update { .. } => {}
+        Command::Update { version, yes } => {
+            updater::self_update(version.as_deref(), yes, cli.quiet)?;
+        }
         Command::Config { command } => match command {
             ConfigCommand::Show => {
                 if cli.json {
