@@ -1,10 +1,11 @@
 use crate::error::AppError;
 use crate::manifest::Target;
+use semver::Version;
 use serde::Deserialize;
 use serde_json;
 use sha2::{Digest, Sha256};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -136,6 +137,151 @@ fn replace_binary(temp_path: &Path, target: &Path, new_ver: &str) -> Result<(), 
             message: format!("failed to replace binary: {err}"),
         }
     })
+}
+
+fn fetch_text(url: &str) -> Result<String, AppError> {
+    let response = ureq::get(url)
+        .set("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
+        .call()
+        .map_err(|err| AppError::Other {
+            message: format!("failed to fetch {url}: {err}"),
+        })?;
+    response.into_string().map_err(|err| AppError::Other {
+        message: format!("failed to read response from {url}: {err}"),
+    })
+}
+
+fn self_update_inner(
+    version: Option<&str>,
+    yes: bool,
+    api_base: &str,
+    out: &mut dyn Write,
+    input: &mut dyn BufRead,
+) -> Result<(), AppError> {
+    let current = CURRENT_VERSION;
+    let release = fetch_release_from(version, api_base)?;
+    let new_ver = release.tag_name.trim_start_matches('v');
+
+    if new_ver == current {
+        if version.is_none() {
+            writeln!(out, "already up to date ({current})").ok();
+        } else {
+            writeln!(out, "already at version {current}").ok();
+        }
+        return Ok(());
+    }
+
+    let current_semver = Version::parse(current).ok();
+    let new_semver = Version::parse(new_ver).ok();
+    let is_downgrade = match (current_semver, new_semver) {
+        (Some(c), Some(n)) => n < c,
+        _ => false,
+    };
+
+    if !yes {
+        let action = if is_downgrade { "downgrade" } else { "update" };
+        write!(out, "{action} {current} -> {new_ver}? [y/N] ").ok();
+        let _ = out.flush();
+        let mut line = String::new();
+        input.read_line(&mut line).ok();
+        let trimmed = line.trim();
+        if trimmed != "y" && trimmed != "Y" {
+            return Ok(());
+        }
+    }
+
+    let asset_name = asset_name_for_current_target()?;
+    let sha256_asset_name = format!("{asset_name}.sha256");
+
+    let binary_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == asset_name)
+        .ok_or_else(|| AppError::Other {
+            message: format!("no release asset found for {asset_name} in release v{new_ver}"),
+        })?;
+
+    let sha256_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == sha256_asset_name)
+        .ok_or_else(|| AppError::Other {
+            message: format!(
+                "no checksum file found for {asset_name} in release v{new_ver}"
+            ),
+        })?;
+
+    // Take only the first whitespace-separated token to handle both bare hex format
+    // and `sha256sum`-style "hex  filename" format defensively.
+    let sidecar_content = fetch_text(&sha256_asset.browser_download_url)?;
+    let expected_hash = sidecar_content
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let current_exe = std::env::current_exe()
+        .and_then(|p| p.canonicalize())
+        .map_err(|err| AppError::Other {
+            message: format!("cannot determine current executable path: {err}"),
+        })?;
+
+    let exe_dir = current_exe.parent().ok_or_else(|| AppError::Other {
+        message: "cannot determine executable directory".to_string(),
+    })?;
+
+    let tmp_path = exe_dir.join(format!("ampland-update-{new_ver}.tmp"));
+
+    let actual_hash = download_with_hash(&binary_asset.browser_download_url, &tmp_path)
+        .map_err(|err| {
+            let _ = std::fs::remove_file(&tmp_path);
+            err
+        })?;
+
+    if actual_hash != expected_hash {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(AppError::Other {
+            message: "checksum mismatch: download may be corrupted".to_string(),
+        });
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&tmp_path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&tmp_path, perms)?;
+    }
+
+    replace_binary(&tmp_path, &current_exe, new_ver).map_err(|err| {
+        let _ = std::fs::remove_file(&tmp_path);
+        err
+    })?;
+
+    writeln!(out, "updated to {new_ver}").ok();
+    Ok(())
+}
+
+/// Update ampland, writing output to stdout and reading confirmation from stdin.
+/// Pass `quiet: true` to suppress all output (for `--quiet` mode).
+pub fn self_update(version: Option<&str>, yes: bool, quiet: bool) -> Result<(), AppError> {
+    if quiet {
+        self_update_inner(
+            version,
+            yes,
+            "https://api.github.com",
+            &mut std::io::sink(),
+            &mut std::io::BufReader::new(std::io::stdin()),
+        )
+    } else {
+        self_update_inner(
+            version,
+            yes,
+            "https://api.github.com",
+            &mut std::io::stdout(),
+            &mut std::io::BufReader::new(std::io::stdin()),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -277,5 +423,62 @@ mod tests {
         let target = temp.path().join("ampland");
         let missing = temp.path().join("missing.tmp");
         assert!(replace_binary(&missing, &target, "0.3.0").is_err());
+    }
+
+    fn make_release_json(tag: &str, asset_url: &str, sha256_url: &str) -> String {
+        format!(
+            r#"{{"tag_name":"{tag}","assets":[
+                {{"name":"ampland-macos-arm64","browser_download_url":"{asset_url}"}},
+                {{"name":"ampland-macos-arm64.sha256","browser_download_url":"{sha256_url}"}}
+            ]}}"#
+        )
+    }
+
+    #[test]
+    fn self_update_already_up_to_date_when_same_version() {
+        let current = CURRENT_VERSION;
+        let body = format!(r#"{{"tag_name":"v{current}","assets":[]}}"#);
+        let base_url = serve_once(body);
+        let mut out = Vec::<u8>::new();
+        let mut inp = std::io::Cursor::new(b"" as &[u8]);
+        let result = self_update_inner(Some(current), true, &base_url, &mut out, &mut inp);
+        assert!(result.is_ok());
+        // When a specific version is requested and matches, prints "already at version"
+        assert!(String::from_utf8(out).unwrap().contains("already at version"));
+    }
+
+    #[test]
+    fn self_update_already_up_to_date_latest() {
+        let current = CURRENT_VERSION;
+        let body = format!(r#"{{"tag_name":"v{current}","assets":[]}}"#);
+        let base_url = serve_once(body);
+        let mut out = Vec::<u8>::new();
+        let mut inp = std::io::Cursor::new(b"" as &[u8]);
+        // version: None → fetching latest, which matches current
+        let result = self_update_inner(None, true, &base_url, &mut out, &mut inp);
+        assert!(result.is_ok());
+        // When fetching latest and already current, prints "already up to date"
+        assert!(String::from_utf8(out).unwrap().contains("already up to date"));
+    }
+
+    #[test]
+    fn self_update_declined_by_user_returns_ok() {
+        // User sees prompt for v99.0.0 and types "n" — no download should happen.
+        // Only the release JSON server is needed; no binary or sha256 servers.
+        let release_body = format!(
+            r#"{{"tag_name":"v99.0.0","assets":[
+                {{"name":"ampland-macos-arm64","browser_download_url":"http://127.0.0.1:1/never"}},
+                {{"name":"ampland-macos-arm64.sha256","browser_download_url":"http://127.0.0.1:1/never.sha256"}}
+            ]}}"#
+        );
+        let base_url = serve_once(release_body);
+        let mut out = Vec::<u8>::new();
+        // User types "n"
+        let mut inp = std::io::Cursor::new(b"n\n" as &[u8]);
+        let result = self_update_inner(None, false, &base_url, &mut out, &mut inp);
+        assert!(result.is_ok());
+        // Confirm the prompt was shown
+        let output = String::from_utf8(out).unwrap();
+        assert!(output.contains("update") || output.contains("downgrade"));
     }
 }
