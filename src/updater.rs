@@ -2,6 +2,10 @@ use crate::error::AppError;
 use crate::manifest::Target;
 use serde::Deserialize;
 use serde_json;
+use sha2::{Digest, Sha256};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Release {
@@ -88,6 +92,32 @@ pub fn asset_name_for_current_target() -> Result<String, AppError> {
     asset_name_for_target(&t.platform, &t.arch)
 }
 
+#[allow(dead_code)]
+fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
+    let response = ureq::get(url)
+        .set("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
+        .call()
+        .map_err(|err| AppError::Other {
+            message: format!("download failed for {url}: {err}"),
+        })?;
+
+    let mut reader = response.into_reader();
+    let mut file = File::create(dest)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+
+    loop {
+        let count = reader.read(&mut buf)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buf[..count]);
+        file.write_all(&buf[..count])?;
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,5 +200,40 @@ mod tests {
     #[test]
     fn asset_name_unknown_platform_errors() {
         assert!(asset_name_for_target("freebsd", "x64").is_err());
+    }
+
+    use sha2::{Digest, Sha256};
+
+    fn serve_bytes_once(payload: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buf = [0u8; 4096];
+            let _ = std::io::Read::read(&mut stream, &mut buf);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                payload.len()
+            );
+            std::io::Write::write_all(&mut stream, resp.as_bytes()).expect("header");
+            std::io::Write::write_all(&mut stream, &payload).expect("body");
+        });
+        format!("http://{addr}/binary")
+    }
+
+    #[test]
+    fn download_with_hash_returns_correct_digest() {
+        let payload = b"fake-binary-content".to_vec();
+        let expected_hex = {
+            let mut h = Sha256::new();
+            h.update(&payload);
+            format!("{:x}", h.finalize())
+        };
+        let url = serve_bytes_once(payload);
+        let temp = tempfile::tempdir().expect("tempdir");
+        let dest = temp.path().join("binary");
+        let actual_hex = download_with_hash(&url, &dest).expect("download");
+        assert_eq!(actual_hex, expected_hex);
+        assert!(dest.exists());
     }
 }
