@@ -196,8 +196,6 @@ node = "20.12.0"
 python = "3.12.1"
 
 [manifest]
-url = "https://github.com/ORG/REPO/releases/latest/download/installers.toml"
-public_key = "HEX_ENCODED_ED25519_PUBLIC_KEY"
 ttl_hours = 24
 
 [[scope]]
@@ -243,47 +241,15 @@ selected binary.
 
 ## Installer manifest
 
-ampland uses a signed TOML manifest that maps tools and versions to download
-URLs. A minimal manifest is embedded in the binary, and ampland will
-optionally fetch and cache a newer manifest if `manifest.url` and
-`manifest.public_key` are set.
+ampland uses a TOML manifest that maps tools and versions to download URLs.
+The manifest is embedded in the binary and cached locally after the first use.
 
 Manifest behavior:
-- The cached manifest is refreshed when the TTL has expired.
-- Signature verification uses Ed25519 with a public key provided in config.
-- If remote fetch or verification fails, ampland falls back to the cached or
-	embedded manifest.
+- The cached manifest is refreshed when the TTL has expired (default 24 hours).
+- If the cache is missing or stale, ampland falls back to the embedded manifest.
 
 Manifest fields:
-- `manifest.url`: URL to `installers.toml`.
-- `manifest.sig_url`: optional; defaults to `installers.toml.sig` at the same
-	base URL.
-- `manifest.public_key`: hex-encoded Ed25519 public key.
 - `manifest.ttl_hours`: cache TTL in hours (default 24).
-
-If `manifest.url` is not set, ampland uses the default release URL:
-`https://github.com/tiibun/ampland/releases/latest/download/installers.toml`.
-
-## Manifest signing
-
-Generate a keypair and public key hex:
-
-```
-openssl genpkey -algorithm ed25519 -out manifest_ed25519.pem
-openssl pkey -in manifest_ed25519.pem -pubout -outform DER | tail -c 32 | xxd -p -c 64 > manifest_public_key.hex
-```
-
-Use the public key hex in one of these places:
-- `manifest.public_key` in `config.toml`.
-- `DEFAULT_PUBLIC_KEY_HEX` in the source.
-
-For GitHub Actions, store the PEM contents in `MANIFEST_SIGNING_KEY`.
-
-Local publish script:
-
-```
-MANIFEST_SIGNING_KEY="$(cat manifest_ed25519.pem)" ./scripts/publish-manifest.sh
-```
 
 ## CLI
 

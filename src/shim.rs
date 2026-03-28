@@ -10,7 +10,7 @@ use tempfile::NamedTempFile;
 use crate::cache::Cache;
 use crate::config::Config;
 use crate::error::AppError;
-use crate::manifest::{Manifest, ManifestStore, Target};
+use crate::manifest::{load_manifest, Manifest, Target};
 use crate::paths::{cache_dir, shims_dir};
 use crate::resolve::resolve_tools;
 
@@ -32,7 +32,7 @@ pub fn rebuild_shims(
     let main_exe = current_main_executable()?;
     write_main_executable_path(&shims_root, &main_exe)?;
 
-    let manifest = ManifestStore::new(cache_root, &config.manifest).load()?;
+    let manifest = load_manifest()?;
     let target = Target::current()?;
     let shim_names = list_shim_names(config, &manifest, &target);
     let mut expected_names: BTreeSet<String> = shim_names.iter().cloned().collect();
@@ -87,7 +87,7 @@ pub fn run_as_shim(tool: &str) -> Result<(), AppError> {
     let cwd = env::current_dir()?;
     let cache = Cache::new(cache_dir()?);
     let target = Target::current()?;
-    let manifest = ManifestStore::new(cache.root(), &config.manifest).load()?;
+    let manifest = load_manifest()?;
     sync_runtime_shims(&cache, None)?;
     let resolution = resolve_bin_path(&config, &cwd, tool, &cache, &manifest, &target)?;
 

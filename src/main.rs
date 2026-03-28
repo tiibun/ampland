@@ -22,7 +22,7 @@ use crate::config::{Config, Scope, ToolVersions};
 use crate::doctor::run_doctor;
 use crate::error::AppError;
 use crate::installer::install;
-use crate::manifest::{Manifest, ManifestStore, Target};
+use crate::manifest::{load_manifest, Manifest, Target};
 use crate::paths::{cache_dir, normalize_path, shims_dir};
 use crate::resolve::{resolve_tool, ResolutionSource};
 
@@ -64,7 +64,7 @@ fn run() -> Result<(), AppError> {
             path,
         } => {
             let target = Target::current()?;
-            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let manifest = load_manifest()?;
             let cwd = resolve_path(cli.path.clone(), path.clone())?;
 
             // If tool is None, read from .tool-versions
@@ -135,7 +135,7 @@ fn run() -> Result<(), AppError> {
         Command::Install { tool, version } => {
             let (tool, version) = normalize_tool_version_arg(tool, version);
             let target = Target::current()?;
-            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let manifest = load_manifest()?;
             let version = match version {
                 Some(version) => resolve_version_spec(&manifest, &tool, &version, &target)?,
                 None => resolve_latest_version(&manifest, &tool, &target)?,
@@ -211,7 +211,7 @@ fn run() -> Result<(), AppError> {
         }
         Command::Search { query } => {
             let target = Target::current()?;
-            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let manifest = load_manifest()?;
             let needle = query.map(|value| value.to_lowercase());
             let mut results: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
@@ -301,7 +301,7 @@ fn run() -> Result<(), AppError> {
         Command::Which { tool } => {
             let cwd = resolve_path(cli.path, None)?;
             let target = Target::current()?;
-            let manifest = ManifestStore::new(&cache_root, &config.manifest).load()?;
+            let manifest = load_manifest()?;
             let resolution =
                 shim::resolve_bin_path(&config, &cwd, &tool, &cache, &manifest, &target)?;
             if !cli.quiet {

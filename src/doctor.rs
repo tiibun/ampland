@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::cache::Cache;
 use crate::config::Config;
 use crate::error::AppError;
-use crate::manifest::{ManifestStore, Target};
+use crate::manifest::{load_manifest, Target};
 use crate::resolve::resolve_tools;
 use crate::shim::list_shim_names;
 
@@ -30,7 +30,7 @@ pub fn run_doctor(
 ) -> Result<DoctorReport, AppError> {
     let path_entries = path_entries();
     let shims_in_path = path_contains(shims_root, &path_entries);
-    let manifest = ManifestStore::new(cache_root, &config.manifest).load()?;
+    let manifest = load_manifest()?;
     let target = Target::current()?;
     let shim_names = list_shim_names(config, &manifest, &target);
     let conflicts = detect_conflicts(shims_root, &shim_names, &path_entries);
