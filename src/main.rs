@@ -375,6 +375,7 @@ fn run() -> Result<(), AppError> {
                 }
             }
         },
+        Command::Update { .. } => {}
         Command::Config { command } => match command {
             ConfigCommand::Show => {
                 if cli.json {

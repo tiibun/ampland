@@ -71,6 +71,14 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    #[command(about = "Update ampland to a new version")]
+    Update {
+        /// Version to update to (default: latest)
+        version: Option<String>,
+        /// Skip confirmation prompt
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
@@ -96,4 +104,40 @@ pub enum ShimCommand {
     Rebuild,
     #[command(about = "Add a shim for a tool")]
     Add { tool: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn update_command_parses_no_args() {
+        let cli = Cli::try_parse_from(["ampland", "update"]).expect("parse");
+        assert!(matches!(cli.command, Command::Update { version: None, yes: false }));
+    }
+
+    #[test]
+    fn update_command_parses_version() {
+        let cli = Cli::try_parse_from(["ampland", "update", "0.2.7"]).expect("parse");
+        assert!(matches!(
+            cli.command,
+            Command::Update { version: Some(ref v), yes: false } if v == "0.2.7"
+        ));
+    }
+
+    #[test]
+    fn update_command_parses_yes_flag() {
+        let cli = Cli::try_parse_from(["ampland", "update", "--yes"]).expect("parse");
+        assert!(matches!(cli.command, Command::Update { version: None, yes: true }));
+    }
+
+    #[test]
+    fn update_command_parses_version_and_yes() {
+        let cli = Cli::try_parse_from(["ampland", "update", "0.2.7", "--yes"]).expect("parse");
+        assert!(matches!(
+            cli.command,
+            Command::Update { version: Some(ref v), yes: true } if v == "0.2.7"
+        ));
+    }
 }
