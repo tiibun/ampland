@@ -8,6 +8,7 @@ mod manifest;
 mod paths;
 mod resolve;
 mod shim;
+mod updater;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
