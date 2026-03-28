@@ -8,6 +8,7 @@ mod manifest;
 mod paths;
 mod resolve;
 mod shim;
+mod updater;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -375,6 +376,9 @@ fn run() -> Result<(), AppError> {
                 }
             }
         },
+        Command::Update { version, yes } => {
+            updater::self_update(version.as_deref(), yes, cli.quiet)?;
+        }
         Command::Config { command } => match command {
             ConfigCommand::Show => {
                 if cli.json {
