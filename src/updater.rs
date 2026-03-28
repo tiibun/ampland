@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::manifest::Target;
 
+#[allow(dead_code)]
 fn asset_name_for_target(platform: &str, arch: &str) -> Result<String, AppError> {
     match (platform, arch) {
         ("macos", "arm64") => Ok("ampland-macos-arm64".to_string()),
@@ -13,6 +14,7 @@ fn asset_name_for_target(platform: &str, arch: &str) -> Result<String, AppError>
     }
 }
 
+#[allow(dead_code)]
 pub fn asset_name_for_current_target() -> Result<String, AppError> {
     let t = Target::current()?;
     asset_name_for_target(&t.platform, &t.arch)
