@@ -502,6 +502,107 @@ fn use_without_args_invalid_format_fails() {
 }
 
 #[test]
+fn unuse_global_removes_tool() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_file = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let shims = temp.path().join("shims");
+
+    fs::write(&config_file, "[global.tools]\nnode = \"22.0.0\"\n").expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config_file)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("--shims-dir")
+        .arg(&shims)
+        .arg("unuse")
+        .arg("--global")
+        .arg("node")
+        .output()
+        .expect("run ampland");
+
+    assert!(
+        output.status.success(),
+        "unuse --global should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let updated = fs::read_to_string(&config_file).expect("read config");
+    assert!(!updated.contains("node"), "node should be removed from config");
+}
+
+#[test]
+fn unuse_scope_removes_tool_keeps_cache() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_file = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let shims = temp.path().join("shims");
+    let project = temp.path().join("workspace").join("project");
+    let cache_tool_dir = cache.join("node").join("22.0.0");
+
+    fs::create_dir_all(&project).expect("create project dir");
+    fs::create_dir_all(&cache_tool_dir).expect("create cache dir");
+    fs::write(cache_tool_dir.join("node"), "fake binary").expect("create fake binary");
+
+    fs::write(
+        &config_file,
+        format!(
+            "[global.tools]\n\n[[scope]]\npath = \"{}/**\"\n[scope.tools]\nnode = \"22.0.0\"\n",
+            project.display()
+        ),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config_file)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("--shims-dir")
+        .arg(&shims)
+        .arg("--path")
+        .arg(&project)
+        .arg("unuse")
+        .arg("node")
+        .output()
+        .expect("run ampland");
+
+    assert!(
+        output.status.success(),
+        "unuse should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let updated = fs::read_to_string(&config_file).expect("read config");
+    assert!(!updated.contains("node = \"22.0.0\""), "node should be removed from scope");
+    assert!(cache_tool_dir.exists(), "cache should be kept");
+}
+
+#[test]
+fn unuse_tool_not_configured_fails() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config_file = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+
+    fs::write(&config_file, "[global.tools]\n").expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .arg("--config")
+        .arg(&config_file)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("unuse")
+        .arg("--global")
+        .arg("node")
+        .output()
+        .expect("run ampland");
+
+    assert!(!output.status.success(), "unuse of unconfigured tool should fail");
+}
+
+#[test]
 fn use_with_args_still_works() {
     let temp = tempfile::tempdir().expect("tempdir");
     let config = temp.path().join("config.toml");

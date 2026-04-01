@@ -34,6 +34,14 @@ pub enum Command {
         #[arg(long)]
         path: Option<PathBuf>,
     },
+    #[command(about = "Remove tool version setting from config (keeps cache)")]
+    Unuse {
+        tool: String,
+        #[arg(short, long)]
+        global: bool,
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
     #[command(about = "Install a tool version")]
     Install {
         tool: String,

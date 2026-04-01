@@ -103,6 +103,26 @@ impl Config {
         usages
     }
 
+    pub fn remove_tool_from_scope(
+        &mut self,
+        normalized_pattern: &str,
+        tool: &str,
+    ) -> Result<bool, AppError> {
+        for index in 0..self.scopes.len() {
+            let expanded = expand_tilde(&self.scopes[index].pattern)?;
+            if expanded != normalized_pattern {
+                continue;
+            }
+            if self.scopes[index].tools.remove(tool).is_some() {
+                if self.scopes[index].tools.is_empty() {
+                    self.scopes.remove(index);
+                }
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn remove_tool_version_from_scope(
         &mut self,
         normalized_pattern: &str,

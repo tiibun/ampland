@@ -132,6 +132,37 @@ fn run() -> Result<(), AppError> {
                 }
             }
         }
+        Command::Unuse { tool, global, path } => {
+            let cwd = resolve_path(cli.path.clone(), path)?;
+
+            let location_label;
+            if global {
+                if config.global.tools.remove(&tool).is_none() {
+                    return Err(AppError::Config {
+                        message: format!("{tool} is not set in global config"),
+                    });
+                }
+                location_label = "global".to_string();
+            } else {
+                let pattern = normalize_scope_pattern(&cwd);
+                if !config.remove_tool_from_scope(&pattern, &tool)? {
+                    return Err(AppError::Config {
+                        message: format!("{tool} is not set for {pattern}"),
+                    });
+                }
+                location_label = pattern;
+            }
+
+            config.save(&config_path)?;
+
+            if !config.all_tool_versions().contains_key(&tool) {
+                shim::rebuild_shims(&config, &cache_root, cli.shims_dir.as_deref())?;
+            }
+
+            if !cli.quiet {
+                println!("removed {tool} from {location_label}");
+            }
+        }
         Command::Install { tool, version } => {
             let (tool, version) = normalize_tool_version_arg(tool, version);
             let target = Target::current()?;
