@@ -1,10 +1,75 @@
 version = 1
-generated_at = "2026-03-27T00:46:13.923029682Z"
+generated_at = "2026-04-02T00:42:54.458895718Z"
 
 [[tool]]
 name = "node"
 vendor = "nodejs"
-default_version = "25.8.2"
+default_version = "25.9.0"
+
+[[tool.version]]
+ver = "25.9.0"
+platform = "macos"
+arch = "arm64"
+url = "https://nodejs.org/dist/v25.9.0/node-v25.9.0-darwin-arm64.tar.gz"
+sha256 = "e479f3c469d3d9303a44f00a8ea37a3788395d171bb8059c48a4bbbd2e371b59"
+format = "tar.gz"
+bin_paths = [
+    "node-v25.9.0-darwin-arm64/bin/node",
+    "node-v25.9.0-darwin-arm64/bin/npm",
+    "node-v25.9.0-darwin-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.9.0"
+platform = "macos"
+arch = "x64"
+url = "https://nodejs.org/dist/v25.9.0/node-v25.9.0-darwin-x64.tar.gz"
+sha256 = "7d737b53ce191142bfa1c17cfa5b070d96e84eebf76b8dd06d84981cbdc3f7e3"
+format = "tar.gz"
+bin_paths = [
+    "node-v25.9.0-darwin-x64/bin/node",
+    "node-v25.9.0-darwin-x64/bin/npm",
+    "node-v25.9.0-darwin-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.9.0"
+platform = "linux"
+arch = "arm64"
+url = "https://nodejs.org/dist/v25.9.0/node-v25.9.0-linux-arm64.tar.xz"
+sha256 = "bf007bf0dcc2fddd90888fde374a1ad33c1ab2ca2ad324c645dd7aed0f9f1460"
+format = "tar.xz"
+bin_paths = [
+    "node-v25.9.0-linux-arm64/bin/node",
+    "node-v25.9.0-linux-arm64/bin/npm",
+    "node-v25.9.0-linux-arm64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.9.0"
+platform = "linux"
+arch = "x64"
+url = "https://nodejs.org/dist/v25.9.0/node-v25.9.0-linux-x64.tar.xz"
+sha256 = "1d8db7d6e291d167e8c467ae4094be175e1a0b3969c7ae1f8955b9f7824f7b2e"
+format = "tar.xz"
+bin_paths = [
+    "node-v25.9.0-linux-x64/bin/node",
+    "node-v25.9.0-linux-x64/bin/npm",
+    "node-v25.9.0-linux-x64/bin/npx",
+]
+
+[[tool.version]]
+ver = "25.9.0"
+platform = "windows"
+arch = "x64"
+url = "https://nodejs.org/dist/v25.9.0/node-v25.9.0-win-x64.zip"
+sha256 = "929552b8305effac843ba7b4270c437aefb702fc3fbd73fcd1bffd35d4ac284e"
+format = "zip"
+bin_paths = [
+    "node-v25.9.0-win-x64/node.exe",
+    "node-v25.9.0-win-x64/npm.cmd",
+    "node-v25.9.0-win-x64/npx.cmd",
+]
 
 [[tool.version]]
 ver = "25.8.2"
