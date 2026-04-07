@@ -23,7 +23,7 @@ use crate::doctor::run_doctor;
 use crate::error::AppError;
 use crate::installer::install;
 use crate::manifest::{load_manifest, Manifest, Target};
-use crate::paths::{cache_dir, normalize_path, shims_dir};
+use crate::paths::{cache_dir, is_path_spec, normalize_path, shims_dir};
 use crate::resolve::{resolve_tool, ResolutionSource};
 
 fn main() {
@@ -103,17 +103,28 @@ fn run() -> Result<(), AppError> {
                 }
 
                 if !cache.is_installed(&tool, &version) {
-                    let package = manifest.resolve(&tool, &version, &target).ok_or_else(|| {
-                        AppError::Cache {
-                            message: format!(
-                                "no installer for {tool}@{version} ({}/{})",
-                                target.platform, target.arch
-                            ),
+                    if is_path_spec(&version) {
+                        let path = std::path::Path::new(&version);
+                        if !path.exists() {
+                            return Err(AppError::Config {
+                                message: format!(
+                                    "specified path for {tool} does not exist: {version}"
+                                ),
+                            });
                         }
-                    })?;
-                    let bin_path = install(&cache, &tool, &version, &package)?;
-                    if !cli.quiet {
-                        println!("installed {tool}@{version} -> {}", bin_path.display());
+                    } else {
+                        let package = manifest.resolve(&tool, &version, &target).ok_or_else(|| {
+                            AppError::Cache {
+                                message: format!(
+                                    "no installer for {tool}@{version} ({}/{})",
+                                    target.platform, target.arch
+                                ),
+                            }
+                        })?;
+                        let bin_path = install(&cache, &tool, &version, &package)?;
+                        if !cli.quiet {
+                            println!("installed {tool}@{version} -> {}", bin_path.display());
+                        }
                     }
                 }
                 installed_tools.push((tool, version));
@@ -536,6 +547,9 @@ fn resolve_version_spec(
     version: &str,
     target: &Target,
 ) -> Result<String, AppError> {
+    if is_path_spec(version) {
+        return Ok(version.to_string());
+    }
     manifest
         .resolve_version_spec(tool, version, target)
         .ok_or_else(|| AppError::Cache {
@@ -821,5 +835,30 @@ name = "node"
 
         let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
         assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn is_path_spec_detects_absolute_paths() {
+        assert!(is_path_spec("/usr/local/bin/node"));
+        assert!(is_path_spec("/home/user/.local/bin/node"));
+        #[cfg(windows)]
+        assert!(is_path_spec(r"C:\Program Files\nodejs\node.exe"));
+        #[cfg(windows)]
+        assert!(is_path_spec("C:/Program Files/nodejs/node.exe"));
+        assert!(!is_path_spec("22.0.0"));
+        assert!(!is_path_spec("22"));
+        assert!(!is_path_spec("latest"));
+    }
+
+    #[test]
+    fn resolve_version_spec_returns_absolute_path_as_is() {
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+        let manifest = sample_manifest();
+        let version =
+            resolve_version_spec(&manifest, "node", "/usr/local/bin/node", &target).expect("ok");
+        assert_eq!(version, "/usr/local/bin/node");
     }
 }

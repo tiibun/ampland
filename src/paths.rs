@@ -45,6 +45,10 @@ pub fn expand_tilde(path: &str) -> Result<String, AppError> {
     }
 }
 
+pub fn is_path_spec(version: &str) -> bool {
+    Path::new(version).is_absolute()
+}
+
 pub fn normalize_path(path: &Path) -> Result<PathBuf, AppError> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()

@@ -11,7 +11,7 @@ use crate::cache::Cache;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::manifest::{load_manifest, Manifest, Target};
-use crate::paths::{cache_dir, shims_dir};
+use crate::paths::{cache_dir, is_path_spec, shims_dir};
 use crate::resolve::resolve_tools;
 
 const MANAGED_SHIMS_FILE: &str = ".ampland-managed-shims";
@@ -275,6 +275,18 @@ pub fn resolve_bin_path(
 ) -> Result<BinResolution, AppError> {
     let resolved = resolve_tools(config, cwd)?;
     if let Some(version) = resolved.tools.get(bin_name) {
+        if is_path_spec(version) {
+            let path = PathBuf::from(version);
+            if path.exists() {
+                return Ok(BinResolution { path });
+            }
+            return Err(AppError::Cache {
+                message: format!(
+                    "configured path for {bin_name} does not exist: {}",
+                    path.display()
+                ),
+            });
+        }
         return resolve_bin_for_tool(bin_name, version, bin_name, cache, manifest, target, false)
             .and_then(|resolution| {
                 resolution.ok_or_else(|| {
@@ -300,6 +312,9 @@ pub fn resolve_bin_path(
     let mut tools: Vec<(String, String)> = resolved.tools.into_iter().collect();
     tools.sort_by(|a, b| a.0.cmp(&b.0));
     for (tool, version) in tools {
+        if is_path_spec(&version) {
+            continue;
+        }
         if let Some(resolution) =
             resolve_bin_for_tool(&tool, &version, bin_name, cache, manifest, target, true)?
         {
@@ -1051,5 +1066,66 @@ name = "node"
         };
         assert!(msg.contains("node@24.0.0"), "hint missing: {msg}");
         assert!(msg.contains("Hint:"), "hint line missing: {msg}");
+    }
+
+    #[test]
+    fn resolve_bin_path_handles_absolute_path_version() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let fake_node = temp.path().join("node");
+        fs::write(&fake_node, b"node-binary").expect("write");
+
+        let abs_path = fake_node.to_string_lossy().to_string();
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", &abs_path)]),
+            },
+            ..Default::default()
+        };
+        let cache = Cache::new(temp.path().join("cache"));
+        let manifest = sample_manifest();
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+
+        let resolved = resolve_bin_path(
+            &config,
+            Path::new("/any/dir"),
+            "node",
+            &cache,
+            &manifest,
+            &target,
+        )
+        .expect("resolve");
+        assert_eq!(resolved.path, fake_node);
+    }
+
+    #[test]
+    fn resolve_bin_path_errors_when_absolute_path_missing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let abs_path = temp.path().join("nonexistent").to_string_lossy().to_string();
+        let config = Config {
+            global: Global {
+                tools: map(&[("node", &abs_path)]),
+            },
+            ..Default::default()
+        };
+        let cache = Cache::new(temp.path().join("cache"));
+        let manifest = sample_manifest();
+        let target = Target {
+            platform: "macos".to_string(),
+            arch: "arm64".to_string(),
+        };
+
+        let err = resolve_bin_path(
+            &config,
+            Path::new("/any/dir"),
+            "node",
+            &cache,
+            &manifest,
+            &target,
+        )
+        .expect_err("should error");
+        assert!(matches!(err, AppError::Cache { .. }));
     }
 }
