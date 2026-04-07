@@ -261,6 +261,7 @@ fn set_file_permissions(path: &Path, executable: bool) -> Result<(), AppError> {
     Ok(())
 }
 
+#[derive(Debug)]
 pub struct BinResolution {
     pub path: PathBuf,
 }
