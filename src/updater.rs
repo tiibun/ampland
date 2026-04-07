@@ -115,23 +115,49 @@ fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-#[cfg_attr(not(windows), allow(unused_variables))]
-fn replace_binary(temp_path: &Path, target: &Path, new_ver: &str) -> Result<(), AppError> {
-    std::fs::rename(temp_path, target).map_err(|err| {
-        #[cfg(windows)]
-        if err.raw_os_error() == Some(32) {
-            // ERROR_SHARING_VIOLATION: binary is locked (running)
-            return AppError::Other {
-                message: format!(
-                    "cannot replace running binary on Windows; download the new version manually: \
-                     https://github.com/tiibun/ampland/releases/tag/v{new_ver}"
-                ),
-            };
+fn replace_binary(temp_path: &Path, target: &Path, _new_ver: &str) -> Result<(), AppError> {
+    #[cfg(windows)]
+    {
+        match std::fs::rename(temp_path, target) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.raw_os_error() == Some(32) => {
+                // ERROR_SHARING_VIOLATION: the running binary cannot be overwritten directly.
+                // Rename the old binary out of the way first, then move the new one into place.
+                let old_path = target.with_extension("exe.old");
+                std::fs::rename(target, &old_path).map_err(|e| AppError::Other {
+                    message: format!("failed to rename current binary to .old: {e}"),
+                })?;
+                std::fs::rename(temp_path, target).map_err(|e| {
+                    // Best-effort restore
+                    let _ = std::fs::rename(&old_path, target);
+                    AppError::Other {
+                        message: format!("failed to move new binary into place: {e}"),
+                    }
+                })?;
+                return Ok(());
+            }
+            Err(err) => {
+                return Err(AppError::Other {
+                    message: format!("failed to replace binary: {err}"),
+                });
+            }
         }
-        AppError::Other {
-            message: format!("failed to replace binary: {err}"),
-        }
+    }
+    #[cfg(not(windows))]
+    std::fs::rename(temp_path, target).map_err(|err| AppError::Other {
+        message: format!("failed to replace binary: {err}"),
     })
+}
+
+/// Remove a stale `ampland.exe.old` left by a previous self-update on Windows.
+#[cfg(windows)]
+pub fn cleanup_old_binary() {
+    if let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) {
+        let old_path = exe.with_extension("exe.old");
+        if old_path.exists() {
+            let _ = std::fs::remove_file(&old_path);
+        }
+    }
 }
 
 fn fetch_text(url: &str) -> Result<String, AppError> {
