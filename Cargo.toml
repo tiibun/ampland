@@ -1,6 +1,6 @@
 [package]
 name = "ampland"
-version = "0.4.3"
+version = "0.5.0"
 edition = "2021"
 default-run = "ampland"
 description = "A fast, deterministic tool manager with native shims."
