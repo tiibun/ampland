@@ -8,7 +8,7 @@ pub fn config_path() -> Result<PathBuf, AppError> {
     let base = BaseDirs::new().ok_or_else(|| AppError::Config {
         message: "unable to determine home directory".to_string(),
     })?;
-    let config_dir = base.config_local_dir();
+    let config_dir = base.home_dir().join(".config");
     Ok(config_dir.join("ampland").join("config.toml"))
 }
 
