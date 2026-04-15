@@ -394,8 +394,9 @@ fn use_without_args_missing_tool_versions_fails() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(".tool-versions")
-            && (stderr.contains("not found") || stderr.contains("found at")),
-        "Error should mention missing .tool-versions file, got: {}",
+            && stderr.contains("mise.toml")
+            && stderr.contains("package.json"),
+        "Error should mention all supported version files, got: {}",
         stderr
     );
 }
@@ -497,6 +498,100 @@ fn use_without_args_invalid_format_fails() {
     assert!(
         stderr.contains("missing version") && stderr.contains("line 1"),
         "Error should mention missing version at line 1, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn use_without_args_reads_mise_toml() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    let mise_toml = work_dir.join("mise.toml");
+    fs::write(&mise_toml, "[tools]\nnode = \"20.10.0\"\n").expect("write mise.toml");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Should fail trying to resolve tools from manifest, not about missing version file
+    assert!(
+        !stderr.contains("no tool version file found"),
+        "Should not complain about missing version file, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn use_without_args_reads_volta_from_package_json() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    let pkg_json = work_dir.join("package.json");
+    fs::write(
+        &pkg_json,
+        r#"{"name":"my-app","volta":{"node":"20.10.0"}}"#,
+    )
+    .expect("write package.json");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Should fail trying to resolve tools from manifest, not about missing version file
+    assert!(
+        !stderr.contains("no tool version file found"),
+        "Should not complain about missing version file, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn use_without_args_prefers_tool_versions_over_mise_toml() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    // Both files exist: .tool-versions takes priority
+    fs::write(work_dir.join(".tool-versions"), "node 20.10.0\n").expect("write .tool-versions");
+    fs::write(work_dir.join("mise.toml"), "[tools]\nnode = \"22.0.0\"\n").expect("write mise.toml");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("no tool version file found"),
+        "Should not complain about missing version file, got: {}",
         stderr
     );
 }

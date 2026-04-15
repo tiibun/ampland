@@ -8,6 +8,7 @@ mod manifest;
 mod paths;
 mod resolve;
 mod shim;
+mod tool_version_file;
 mod updater;
 
 use std::collections::BTreeMap;
@@ -80,15 +81,23 @@ fn run() -> Result<(), AppError> {
                 vec![(tool, version)]
             } else {
                 let tool_versions_path = cwd.join(".tool-versions");
-                if !tool_versions_path.exists() {
+                let mise_toml_path = cwd.join("mise.toml");
+                let package_json_path = cwd.join("package.json");
+
+                if tool_versions_path.exists() {
+                    tool_version_file::parse_tool_versions_file(&tool_versions_path)?
+                } else if mise_toml_path.exists() {
+                    tool_version_file::parse_mise_toml_file(&mise_toml_path)?
+                } else if package_json_path.exists() {
+                    tool_version_file::parse_volta_from_package_json(&package_json_path)?
+                } else {
                     return Err(AppError::Config {
                         message: format!(
-                            "no .tool-versions file found at {}",
-                            tool_versions_path.display()
+                            "no tool version file found at {} (checked .tool-versions, mise.toml, package.json)",
+                            cwd.display()
                         ),
                     });
                 }
-                parse_tool_versions_file(&tool_versions_path)?
             };
 
             let mut scope_label = None;
@@ -577,40 +586,6 @@ fn normalize_tool_version_arg(tool: String, version: Option<String>) -> (String,
     (tool, None)
 }
 
-fn parse_tool_versions_file(path: &Path) -> Result<Vec<(String, String)>, AppError> {
-    let contents = std::fs::read_to_string(path).map_err(|err| AppError::Config {
-        message: format!("failed to read {}: {}", path.display(), err),
-    })?;
-
-    let mut result = Vec::new();
-    for (line_num, line) in contents.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let mut parts = line.split_whitespace();
-        let tool = parts.next().ok_or_else(|| AppError::Config {
-            message: format!(
-                "invalid format at line {} in {}",
-                line_num + 1,
-                path.display()
-            ),
-        })?;
-        let version = parts.next().ok_or_else(|| AppError::Config {
-            message: format!(
-                "missing version at line {} in {}",
-                line_num + 1,
-                path.display()
-            ),
-        })?;
-
-        result.push((tool.to_string(), version.to_string()));
-    }
-
-    Ok(result)
-}
-
 fn resolve_latest_version(
     manifest: &Manifest,
     tool: &str,
@@ -739,105 +714,6 @@ name = "node"
             config.scopes[0].tools.get("bun"),
             Some(&"1.0.0".to_string())
         );
-    }
-
-    #[test]
-    fn parse_tool_versions_file_valid() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let tool_versions_path = temp_dir.path().join(".tool-versions");
-
-        std::fs::write(
-            &tool_versions_path,
-            "node 20.10.0\npython 3.11.5\ngo 1.21.0\n",
-        )
-        .expect("write file");
-
-        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
-        assert_eq!(result[1], ("python".to_string(), "3.11.5".to_string()));
-        assert_eq!(result[2], ("go".to_string(), "1.21.0".to_string()));
-    }
-
-    #[test]
-    fn parse_tool_versions_file_with_comments_and_empty_lines() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let tool_versions_path = temp_dir.path().join(".tool-versions");
-
-        std::fs::write(
-            &tool_versions_path,
-            "# This is a comment\nnode 20.10.0\n\n# Another comment\npython 3.11.5\n\n",
-        )
-        .expect("write file");
-
-        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
-        assert_eq!(result[1], ("python".to_string(), "3.11.5".to_string()));
-    }
-
-    #[test]
-    fn parse_tool_versions_file_with_extra_whitespace() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let tool_versions_path = temp_dir.path().join(".tool-versions");
-
-        std::fs::write(
-            &tool_versions_path,
-            "  node   20.10.0  \n  python   3.11.5  \n",
-        )
-        .expect("write file");
-
-        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0], ("node".to_string(), "20.10.0".to_string()));
-        assert_eq!(result[1], ("python".to_string(), "3.11.5".to_string()));
-    }
-
-    #[test]
-    fn parse_tool_versions_file_missing_version() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let tool_versions_path = temp_dir.path().join(".tool-versions");
-
-        std::fs::write(&tool_versions_path, "node\n").expect("write file");
-
-        let result = parse_tool_versions_file(&tool_versions_path);
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("missing version"));
-        assert!(err_msg.contains("line 1"));
-    }
-
-    #[test]
-    fn parse_tool_versions_file_not_found() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let tool_versions_path = temp_dir.path().join("nonexistent.tool-versions");
-
-        let result = parse_tool_versions_file(&tool_versions_path);
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("failed to read"));
-    }
-
-    #[test]
-    fn parse_tool_versions_file_empty() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let tool_versions_path = temp_dir.path().join(".tool-versions");
-
-        std::fs::write(&tool_versions_path, "").expect("write file");
-
-        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
-        assert_eq!(result.len(), 0);
-    }
-
-    #[test]
-    fn parse_tool_versions_file_only_comments() {
-        let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let tool_versions_path = temp_dir.path().join(".tool-versions");
-
-        std::fs::write(&tool_versions_path, "# comment 1\n# comment 2\n").expect("write file");
-
-        let result = parse_tool_versions_file(&tool_versions_path).expect("parse");
-        assert_eq!(result.len(), 0);
     }
 
     #[test]
