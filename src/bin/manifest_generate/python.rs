@@ -4,8 +4,7 @@ use semver::Version;
 use serde::Deserialize;
 
 use crate::common::{
-    default_targets, download_and_hash, fetch_sha256, fetch_text, TargetSpec, ToolEntry,
-    ToolManifest, ToolVersion,
+    default_targets, fetch_sha256, fetch_text, TargetSpec, ToolEntry, ToolManifest, ToolVersion,
 };
 
 #[derive(Debug, Deserialize)]
@@ -73,10 +72,7 @@ pub(crate) fn generate_python_manifest(generated_at: &str) -> Result<ToolManifes
                 )
             })?;
 
-            let sha256 = match &asset.sha256_url {
-                Some(url) => fetch_sha256(url)?,
-                None => download_and_hash(&asset.url)?,
-            };
+            let sha256 = resolve_python_sha256(asset)?;
 
             tool_versions.push(ToolVersion {
                 ver: asset.version_str.clone(),
@@ -191,7 +187,13 @@ fn parse_python_asset(
         return Ok(None);
     }
 
-    let trimmed = &asset.name["cpython-".len()..asset.name.len() - "-install_only.tar.gz".len()];
+    let prefix_len = "cpython-".len();
+    let suffix_len = "-install_only.tar.gz".len();
+    if asset.name.len() < prefix_len + suffix_len {
+        return Ok(None);
+    }
+
+    let trimmed = &asset.name[prefix_len..asset.name.len() - suffix_len];
     let triples = [
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",
@@ -235,6 +237,18 @@ fn parse_python_asset(
         url: asset.browser_download_url.clone(),
         sha256_url,
     }))
+}
+
+fn resolve_python_sha256(asset: &PythonAssetInfo) -> Result<String, String> {
+    match &asset.sha256_url {
+        Some(url) => fetch_sha256(url),
+        None => Err(format!(
+            "no .sha256 asset published for {} ({} {}); refusing to fall back to hashing the \
+             downloaded artifact, which provides no integrity protection against a compromised \
+             upstream",
+            asset.url, asset.target.platform, asset.target.arch
+        )),
+    }
 }
 
 fn python_targets() -> Vec<TargetSpec> {
@@ -283,7 +297,28 @@ mod tests {
 
     use semver::Version;
 
-    use super::{python_targets, select_python_versions, PythonAssetInfo};
+    use super::{
+        parse_python_asset, python_targets, resolve_python_sha256, select_python_versions,
+        GithubAsset, PythonAssetInfo,
+    };
+
+    #[test]
+    fn resolve_python_sha256_errors_when_no_sha256_asset_is_published() {
+        let target = python_targets().remove(0);
+        let asset = PythonAssetInfo {
+            version: Version::parse("3.13.2").unwrap(),
+            version_str: "3.13.2".to_string(),
+            target,
+            url: "https://example.com/cpython-3.13.2.tar.gz".to_string(),
+            sha256_url: None,
+        };
+
+        let result = resolve_python_sha256(&asset);
+
+        assert!(result.is_err());
+        let message = result.unwrap_err();
+        assert!(message.contains("cpython-3.13.2.tar.gz"));
+    }
 
     #[test]
     fn select_python_versions_keeps_all_complete_patch_releases_descending() {
@@ -349,5 +384,51 @@ mod tests {
         let mut assets = assets_for_version(version);
         assets.remove(&(String::from("windows"), String::from("x64")));
         assets
+    }
+
+    fn asset_named(name: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.com/{name}"),
+        }
+    }
+
+    #[test]
+    fn parse_python_asset_does_not_panic_on_exact_exploit_name() {
+        // "cpython-" (8) + "-install_only.tar.gz" (20) overlap by one byte in this
+        // name (len 27), so the unchecked slice would previously panic.
+        let asset = asset_named("cpython-install_only.tar.gz");
+        let result = parse_python_asset(&asset, &HashMap::new()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_python_asset_handles_exact_boundary_length_with_empty_middle() {
+        // len == prefix_len + suffix_len exactly (28); trimmed middle is empty,
+        // which is not a valid version/triple, so this should resolve to None
+        // rather than panicking.
+        let asset = asset_named("cpython--install_only.tar.gz");
+        let result = parse_python_asset(&asset, &HashMap::new()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_python_asset_handles_one_byte_above_boundary() {
+        let asset = asset_named("cpython-x-install_only.tar.gz");
+        let result = parse_python_asset(&asset, &HashMap::new()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_python_asset_parses_well_formed_name() {
+        let name = "cpython-3.12.9+20250205-x86_64-unknown-linux-gnu-install_only.tar.gz";
+        let asset = asset_named(name);
+        let info = parse_python_asset(&asset, &HashMap::new())
+            .unwrap()
+            .expect("well-formed asset name should parse");
+        assert_eq!(info.version_str, "3.12.9");
+        assert_eq!(info.target.platform, "linux");
+        assert_eq!(info.target.arch, "x64");
+        assert_eq!(info.url, asset.browser_download_url);
     }
 }

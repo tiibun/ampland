@@ -4,7 +4,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 pub(crate) const USER_AGENT: &str = "ampland-manifest-generate";
 pub(crate) const OUTPUT_DIR_DEFAULT: &str = "assets/manifest";
@@ -265,24 +264,6 @@ pub(crate) fn fetch_sha256(url: &str) -> Result<String, String> {
         .next()
         .ok_or_else(|| format!("empty sha256 response from {url}"))?;
     Ok(hash.to_string())
-}
-
-pub(crate) fn download_and_hash(url: &str) -> Result<String, String> {
-    let response = ureq::get(url)
-        .set("User-Agent", USER_AGENT)
-        .call()
-        .map_err(|err| err.to_string())?;
-    let mut reader = response.into_reader();
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let read = reader.read(&mut buf).map_err(|err| err.to_string())?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buf[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
 }
 
 #[cfg(test)]
