@@ -84,7 +84,7 @@ fn run() -> Result<(), AppError> {
                 let mise_toml_path = cwd.join("mise.toml");
                 let package_json_path = cwd.join("package.json");
 
-                if tool_versions_path.exists() {
+                let discovered = if tool_versions_path.exists() {
                     tool_version_file::parse_tool_versions_file(&tool_versions_path)?
                 } else if mise_toml_path.exists() {
                     tool_version_file::parse_mise_toml_file(&mise_toml_path)?
@@ -97,7 +97,26 @@ fn run() -> Result<(), AppError> {
                             cwd.display()
                         ),
                     });
+                };
+
+                // Auto-discovered version files are project-controlled input. Unlike
+                // the explicit `ampland use <tool> </abs/path>` CLI form, a version
+                // string read from .tool-versions/mise.toml/package.json must never
+                // be allowed to silently resolve as an absolute filesystem path: that
+                // would let a repository point ampland at an arbitrary executable
+                // which later gets persisted to config.toml and executed unchecked.
+                for (tool, version) in &discovered {
+                    if is_path_spec(version) {
+                        return Err(AppError::Config {
+                            message: format!(
+                                "refusing to use absolute path '{version}' as the version for {tool} from an auto-discovered version file ({}); pass it explicitly with `ampland use {tool} {version}` if this is intended",
+                                cwd.display()
+                            ),
+                        });
+                    }
                 }
+
+                discovered
             };
 
             let mut scope_label = None;
