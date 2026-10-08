@@ -597,6 +597,175 @@ fn use_without_args_prefers_tool_versions_over_mise_toml() {
 }
 
 #[test]
+fn use_without_args_rejects_absolute_path_in_tool_versions() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    // A malicious/compromised .tool-versions pointing a tool at an arbitrary
+    // absolute path on disk, discovered automatically (no explicit tool arg).
+    #[cfg(unix)]
+    let malicious_version = "/usr/bin/node";
+    #[cfg(windows)]
+    let malicious_version = "C:/Windows/System32/node.exe";
+
+    let tool_versions = work_dir.join(".tool-versions");
+    fs::write(&tool_versions, format!("node {malicious_version}\n")).expect("write .tool-versions");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    assert!(
+        !output.status.success(),
+        "use should reject an absolute path auto-discovered from .tool-versions"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to use absolute path"),
+        "expected rejection message, got: {}",
+        stderr
+    );
+    assert!(
+        !config.exists(),
+        "config.toml should not be written when the auto-discovered version is rejected"
+    );
+}
+
+#[test]
+fn use_without_args_rejects_absolute_path_in_mise_toml() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    #[cfg(unix)]
+    let malicious_version = "/usr/bin/node";
+    #[cfg(windows)]
+    let malicious_version = "C:/Windows/System32/node.exe";
+
+    let mise_toml = work_dir.join("mise.toml");
+    fs::write(
+        &mise_toml,
+        format!("[tools]\nnode = \"{malicious_version}\"\n"),
+    )
+    .expect("write mise.toml");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    assert!(
+        !output.status.success(),
+        "use should reject an absolute path auto-discovered from mise.toml"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to use absolute path"),
+        "expected rejection message, got: {}",
+        stderr
+    );
+    assert!(!config.exists());
+}
+
+#[test]
+fn use_without_args_rejects_absolute_path_in_package_json() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    #[cfg(unix)]
+    let malicious_version = "/usr/bin/node";
+    #[cfg(windows)]
+    let malicious_version = "C:/Windows/System32/node.exe";
+
+    let pkg_json = work_dir.join("package.json");
+    fs::write(
+        &pkg_json,
+        format!(r#"{{"name":"my-app","volta":{{"node":"{malicious_version}"}}}}"#),
+    )
+    .expect("write package.json");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("use")
+        .output()
+        .expect("run ampland");
+
+    assert!(
+        !output.status.success(),
+        "use should reject an absolute path auto-discovered from package.json"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to use absolute path"),
+        "expected rejection message, got: {}",
+        stderr
+    );
+    assert!(!config.exists());
+}
+
+#[test]
+fn use_with_explicit_args_allows_absolute_path() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = temp.path().join("config.toml");
+    let cache = temp.path().join("cache");
+    let shims = temp.path().join("shims");
+    let work_dir = temp.path().join("project");
+    fs::create_dir_all(&work_dir).expect("create work dir");
+
+    // A legitimate, explicit `ampland use <tool> </abs/path>` invocation must
+    // keep working even though the same absolute-path value is rejected when
+    // it is auto-discovered from a project version file.
+    let fake_bin = temp.path().join("fake-node");
+    fs::write(&fake_bin, "#!/bin/sh\necho fake\n").expect("write fake bin");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
+        .current_dir(&work_dir)
+        .arg("--config")
+        .arg(&config)
+        .arg("--cache-dir")
+        .arg(&cache)
+        .arg("--shims-dir")
+        .arg(&shims)
+        .arg("use")
+        .arg("node")
+        .arg(&fake_bin)
+        .output()
+        .expect("run ampland");
+
+    assert!(
+        output.status.success(),
+        "explicit absolute-path use should still succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let updated = fs::read_to_string(&config).expect("read config");
+    assert!(updated.contains(&fake_bin.display().to_string()));
+}
+
+#[test]
 fn unuse_global_removes_tool() {
     let temp = tempfile::tempdir().expect("tempdir");
     let config_file = temp.path().join("config.toml");
