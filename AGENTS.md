@@ -74,3 +74,6 @@ This workflow keeps planning context visible in PRs for reviewers while avoiding
 
 ## Coverage
 - `cargo llvm-cov --lcov --output-path lcov.info`
+
+## Release
+- `cargo release --no-publish` (bumps the version, commits, and tags; does not publish to crates.io)
