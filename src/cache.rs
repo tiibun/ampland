@@ -7,6 +7,28 @@ use crate::error::AppError;
 
 pub(crate) const INSTALL_MARKER_FILE: &str = ".installed";
 
+/// Returns true if `value` is safe to use as a single path component when
+/// building a path under the cache root: non-empty, not "." or "..", and
+/// containing no path separators (so it cannot escape the parent directory
+/// it's joined into) or absolute-path markers.
+fn is_safe_path_component(value: &str) -> bool {
+    if value.is_empty() || value == "." || value == ".." {
+        return false;
+    }
+    if value.contains('/') || value.contains('\\') {
+        return false;
+    }
+    // Guards against Windows drive-relative / rooted forms like "C:" or ":"
+    // that `Path::is_absolute` may not catch on non-Windows build targets.
+    if value.contains(':') {
+        return false;
+    }
+    if Path::new(value).is_absolute() {
+        return false;
+    }
+    true
+}
+
 pub struct Cache {
     root: PathBuf,
 }
@@ -52,13 +74,30 @@ impl Cache {
     }
 
     pub fn uninstall(&self, tool: &str, version: &str) -> Result<(), AppError> {
+        if !is_safe_path_component(tool) || !is_safe_path_component(version) {
+            return Err(AppError::Cache {
+                message: format!("invalid tool/version: {tool}@{version}"),
+            });
+        }
+
         let dir = self.tool_version_dir(tool, version);
         if !dir.exists() {
             return Err(AppError::Cache {
                 message: format!("{tool}@{version} is not installed"),
             });
         }
-        fs::remove_dir_all(dir)?;
+
+        // Defense-in-depth: confirm the resolved directory is actually a
+        // descendant of the cache root before removing anything.
+        let canonical_root = self.root.canonicalize()?;
+        let canonical_dir = dir.canonicalize()?;
+        if !canonical_dir.starts_with(&canonical_root) {
+            return Err(AppError::Cache {
+                message: format!("{tool}@{version} resolves outside the cache root"),
+            });
+        }
+
+        fs::remove_dir_all(canonical_dir)?;
         Ok(())
     }
 
@@ -190,6 +229,53 @@ mod tests {
         assert_eq!(removed.len(), 1);
         assert!(cache.tool_version_dir("node", "22").exists());
         assert!(!cache.tool_version_dir("node", "20").exists());
+    }
+
+    #[test]
+    fn uninstall_rejects_path_traversal_tool_or_version() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+
+        // Create a sibling directory that a traversal attempt would target.
+        let outside = temp.path().join("outside-target");
+        fs::create_dir_all(&outside).expect("mkdir outside");
+        fs::write(outside.join("canary.txt"), b"keep me").expect("write canary");
+
+        for (tool, version) in [
+            ("..", "outside-target"),
+            ("node", "../outside-target"),
+            ("../outside-target", "x"),
+            ("node/../../outside-target", "x"),
+        ] {
+            let err = cache
+                .uninstall(tool, version)
+                .expect_err("traversal attempt should be rejected");
+            assert!(matches!(err, AppError::Cache { .. }));
+        }
+
+        assert!(outside.exists(), "target outside cache root must survive");
+        assert!(outside.join("canary.txt").exists());
+    }
+
+    #[test]
+    fn uninstall_rejects_absolute_path_tool_or_version() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cache = Cache::new(temp.path().to_path_buf());
+
+        let outside = temp.path().join("outside-abs");
+        fs::create_dir_all(&outside).expect("mkdir outside");
+
+        #[cfg(windows)]
+        let absolute_version = "C:\\Windows";
+        #[cfg(not(windows))]
+        let absolute_version = outside.to_str().expect("utf8 path").to_string();
+
+        let err = cache
+            .uninstall("node", &absolute_version)
+            .expect_err("absolute path should be rejected");
+        assert!(matches!(err, AppError::Cache { .. }));
+
+        assert!(outside.exists(), "target outside cache root must survive");
     }
 
     #[test]
