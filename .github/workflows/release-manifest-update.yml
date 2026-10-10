@@ -57,7 +57,9 @@ jobs:
         run: |
           git add Cargo.toml Cargo.lock
           git commit -m "chore: release v${VERSION}"
-          git tag "v${VERSION}"
+          git tag -a "v${VERSION}" -m "v${VERSION}"
 
       - name: Push release commit and tag
-        run: git push origin HEAD:main --follow-tags
+        env:
+          VERSION: ${{ steps.bump_version.outputs.version }}
+        run: git push origin HEAD:main "v${VERSION}"
