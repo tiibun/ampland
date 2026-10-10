@@ -25,6 +25,7 @@ struct PythonAssetInfo {
     target: TargetSpec,
     url: String,
     sha256_url: Option<String>,
+    sha256_from_sums: Option<String>,
 }
 
 pub(crate) fn generate_python_manifest(generated_at: &str) -> Result<ToolManifest, String> {
@@ -159,14 +160,25 @@ fn fetch_python_assets() -> Result<Vec<PythonAssetInfo>, String> {
             release_count
         );
         let mut sha256_by_name = HashMap::new();
+        let mut sha256sums_url = None;
         for asset in &release.assets {
             if asset.name.ends_with(".sha256") || asset.name.ends_with(".sha256.txt") {
                 sha256_by_name.insert(asset.name.clone(), asset.browser_download_url.clone());
+            } else if asset.name == "SHA256SUMS" {
+                sha256sums_url = Some(asset.browser_download_url.clone());
             }
         }
 
+        let sha256sums = match &sha256sums_url {
+            Some(url) => {
+                eprintln!("python: fetching SHA256SUMS for release {}", index + 1);
+                parse_sha256sums(&fetch_text(url)?)
+            }
+            None => HashMap::new(),
+        };
+
         for asset in &release.assets {
-            if let Some(info) = parse_python_asset(asset, &sha256_by_name)? {
+            if let Some(info) = parse_python_asset(asset, &sha256_by_name, &sha256sums)? {
                 assets.push(info);
             }
         }
@@ -179,6 +191,7 @@ fn fetch_python_assets() -> Result<Vec<PythonAssetInfo>, String> {
 fn parse_python_asset(
     asset: &GithubAsset,
     sha256_by_name: &HashMap<String, String>,
+    sha256sums: &HashMap<String, String>,
 ) -> Result<Option<PythonAssetInfo>, String> {
     if !asset.name.starts_with("cpython-") {
         return Ok(None);
@@ -229,6 +242,7 @@ fn parse_python_asset(
         .get(&format!("{}.sha256", asset.name))
         .or_else(|| sha256_by_name.get(&format!("{}.sha256.txt", asset.name)))
         .cloned();
+    let sha256_from_sums = sha256sums.get(&asset.name).cloned();
 
     Ok(Some(PythonAssetInfo {
         version,
@@ -236,19 +250,48 @@ fn parse_python_asset(
         target,
         url: asset.browser_download_url.clone(),
         sha256_url,
+        sha256_from_sums,
     }))
 }
 
-fn resolve_python_sha256(asset: &PythonAssetInfo) -> Result<String, String> {
-    match &asset.sha256_url {
-        Some(url) => fetch_sha256(url),
-        None => Err(format!(
-            "no .sha256 asset published for {} ({} {}); refusing to fall back to hashing the \
-             downloaded artifact, which provides no integrity protection against a compromised \
-             upstream",
-            asset.url, asset.target.platform, asset.target.arch
-        )),
+/// Parses a `SHA256SUMS`-style aggregate checksum file (`sha256sum` output:
+/// `<64-hex-hash>  <filename>` in text mode, or `<64-hex-hash> *<filename>` in
+/// binary mode) into a map from filename to hash. Malformed lines are skipped
+/// rather than treated as an error, since this is a best-effort lookup beside
+/// the primary per-asset `.sha256` mechanism.
+fn parse_sha256sums(text: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let hash = match parts.next() {
+            Some(value) if value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                value
+            }
+            _ => continue,
+        };
+        let name = match parts.next() {
+            Some(value) => value.trim_start().trim_start_matches('*'),
+            None => continue,
+        };
+        map.insert(name.to_string(), hash.to_string());
     }
+    map
+}
+
+fn resolve_python_sha256(asset: &PythonAssetInfo) -> Result<String, String> {
+    if let Some(url) = &asset.sha256_url {
+        return fetch_sha256(url);
+    }
+    if let Some(hash) = &asset.sha256_from_sums {
+        return Ok(hash.clone());
+    }
+    Err(format!(
+        "no .sha256 asset or SHA256SUMS entry published for {} ({} {}); refusing to fall back to \
+         hashing the downloaded artifact, which provides no integrity protection against a \
+         compromised upstream",
+        asset.url, asset.target.platform, asset.target.arch
+    ))
 }
 
 fn python_targets() -> Vec<TargetSpec> {
@@ -298,8 +341,8 @@ mod tests {
     use semver::Version;
 
     use super::{
-        parse_python_asset, python_targets, resolve_python_sha256, select_python_versions,
-        GithubAsset, PythonAssetInfo,
+        parse_python_asset, parse_sha256sums, python_targets, resolve_python_sha256,
+        select_python_versions, GithubAsset, PythonAssetInfo,
     };
 
     #[test]
@@ -311,6 +354,7 @@ mod tests {
             target,
             url: "https://example.com/cpython-3.13.2.tar.gz".to_string(),
             sha256_url: None,
+            sha256_from_sums: None,
         };
 
         let result = resolve_python_sha256(&asset);
@@ -318,6 +362,61 @@ mod tests {
         assert!(result.is_err());
         let message = result.unwrap_err();
         assert!(message.contains("cpython-3.13.2.tar.gz"));
+    }
+
+    #[test]
+    fn resolve_python_sha256_uses_sha256sums_when_per_asset_file_missing() {
+        let target = python_targets().remove(0);
+        let asset = PythonAssetInfo {
+            version: Version::parse("3.13.2").unwrap(),
+            version_str: "3.13.2".to_string(),
+            target,
+            url: "https://example.com/cpython-3.13.2.tar.gz".to_string(),
+            sha256_url: None,
+            sha256_from_sums: Some("a".repeat(64)),
+        };
+
+        let result = resolve_python_sha256(&asset).unwrap();
+
+        assert_eq!(result, "a".repeat(64));
+    }
+
+    #[test]
+    fn parse_sha256sums_handles_text_and_binary_mode_lines() {
+        let hash_a = "0".repeat(64);
+        let hash_b = "f".repeat(64);
+        let text = format!(
+            "{hash_a}  cpython-3.15.0+20261009-aarch64-apple-darwin-install_only.tar.gz\n\
+             {hash_b} *cpython-3.15.0+20261009-x86_64-pc-windows-msvc-install_only.tar.gz\n\
+             \n\
+             not-a-valid-line\n"
+        );
+
+        let map = parse_sha256sums(&text);
+
+        assert_eq!(
+            map.get("cpython-3.15.0+20261009-aarch64-apple-darwin-install_only.tar.gz"),
+            Some(&hash_a)
+        );
+        assert_eq!(
+            map.get("cpython-3.15.0+20261009-x86_64-pc-windows-msvc-install_only.tar.gz"),
+            Some(&hash_b)
+        );
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn parse_python_asset_populates_sha256_from_sums_map() {
+        let name = "cpython-3.12.9+20250205-x86_64-unknown-linux-gnu-install_only.tar.gz";
+        let asset = asset_named(name);
+        let mut sha256sums = HashMap::new();
+        sha256sums.insert(name.to_string(), "b".repeat(64));
+
+        let info = parse_python_asset(&asset, &HashMap::new(), &sha256sums)
+            .unwrap()
+            .expect("well-formed asset name should parse");
+
+        assert_eq!(info.sha256_from_sums, Some("b".repeat(64)));
     }
 
     #[test]
@@ -374,6 +473,7 @@ mod tests {
                         "https://example.com/{version}/{}-{}.sha256",
                         key.0, key.1
                     )),
+                    sha256_from_sums: None,
                 };
                 (key, info)
             })
@@ -398,7 +498,7 @@ mod tests {
         // "cpython-" (8) + "-install_only.tar.gz" (20) overlap by one byte in this
         // name (len 27), so the unchecked slice would previously panic.
         let asset = asset_named("cpython-install_only.tar.gz");
-        let result = parse_python_asset(&asset, &HashMap::new()).unwrap();
+        let result = parse_python_asset(&asset, &HashMap::new(), &HashMap::new()).unwrap();
         assert!(result.is_none());
     }
 
@@ -408,14 +508,14 @@ mod tests {
         // which is not a valid version/triple, so this should resolve to None
         // rather than panicking.
         let asset = asset_named("cpython--install_only.tar.gz");
-        let result = parse_python_asset(&asset, &HashMap::new()).unwrap();
+        let result = parse_python_asset(&asset, &HashMap::new(), &HashMap::new()).unwrap();
         assert!(result.is_none());
     }
 
     #[test]
     fn parse_python_asset_handles_one_byte_above_boundary() {
         let asset = asset_named("cpython-x-install_only.tar.gz");
-        let result = parse_python_asset(&asset, &HashMap::new()).unwrap();
+        let result = parse_python_asset(&asset, &HashMap::new(), &HashMap::new()).unwrap();
         assert!(result.is_none());
     }
 
@@ -423,7 +523,7 @@ mod tests {
     fn parse_python_asset_parses_well_formed_name() {
         let name = "cpython-3.12.9+20250205-x86_64-unknown-linux-gnu-install_only.tar.gz";
         let asset = asset_named(name);
-        let info = parse_python_asset(&asset, &HashMap::new())
+        let info = parse_python_asset(&asset, &HashMap::new(), &HashMap::new())
             .unwrap()
             .expect("well-formed asset name should parse");
         assert_eq!(info.version_str, "3.12.9");
