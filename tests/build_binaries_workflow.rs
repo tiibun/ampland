@@ -7,7 +7,7 @@ fn release_publication_happens_after_matrix_builds_finish() {
         .expect("workflow should define a dedicated release job");
 
     assert!(
-        !build_section.contains("softprops/action-gh-release@v2"),
+        !build_section.contains("softprops/action-gh-release@"),
         "matrix build job should only produce artifacts"
     );
     assert!(
@@ -19,7 +19,7 @@ fn release_publication_happens_after_matrix_builds_finish() {
         "release job should gather artifacts from completed build jobs"
     );
     assert!(
-        release_section.contains("softprops/action-gh-release@v2"),
+        release_section.contains("softprops/action-gh-release@"),
         "release job should publish the GitHub release"
     );
 }
