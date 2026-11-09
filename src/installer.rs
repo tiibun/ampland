@@ -277,6 +277,29 @@ mod tests {
     use crate::manifest::ResolvedPackage;
 
     #[test]
+    fn unpack_zip_extracts_entries_and_skips_unsafe_paths() {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp.path().join("tool.zip");
+        let mut writer = zip::ZipWriter::new(File::create(&archive_path).expect("create zip"));
+        let options = SimpleFileOptions::default();
+        writer.add_directory("bin/", options).expect("add dir");
+        writer.start_file("bin/tool", options).expect("start file");
+        writer.write_all(b"tool").expect("write file");
+        writer.start_file("../escape", options).expect("start file");
+        writer.write_all(b"escape").expect("write file");
+        writer.finish().expect("finish zip");
+
+        let target = temp.path().join("out");
+        unpack_zip(&archive_path, &target).expect("unpack");
+
+        assert_eq!(fs::read(target.join("bin/tool")).expect("read"), b"tool");
+        assert!(!temp.path().join("escape").exists());
+    }
+
+    #[test]
     fn normalizes_hex() {
         assert_eq!(normalize_hex(" AbCd "), "abcd");
     }
