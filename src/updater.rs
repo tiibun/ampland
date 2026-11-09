@@ -2,7 +2,6 @@ use crate::error::AppError;
 use crate::manifest::Target;
 use semver::Version;
 use serde::Deserialize;
-use serde_json;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufRead, Read, Write};
@@ -55,11 +54,9 @@ fn fetch_release_from(version: Option<&str>, base_url: &str) -> Result<Release, 
         }
     };
 
-    let body = response
-        .into_string()
-        .map_err(|err| AppError::Other {
-            message: format!("failed to read release response: {err}"),
-        })?;
+    let body = response.into_string().map_err(|err| AppError::Other {
+        message: format!("failed to read release response: {err}"),
+    })?;
 
     let release: Release = serde_json::from_str(&body).map_err(|err| AppError::Other {
         message: format!("failed to parse release info: {err}"),
@@ -227,9 +224,7 @@ fn self_update_inner(
         .iter()
         .find(|a| a.name == sha256_asset_name)
         .ok_or_else(|| AppError::Other {
-            message: format!(
-                "no checksum file found for {asset_name} in release v{new_ver}"
-            ),
+            message: format!("no checksum file found for {asset_name} in release v{new_ver}"),
         })?;
 
     // Take only the first whitespace-separated token to handle both bare hex format
@@ -253,8 +248,8 @@ fn self_update_inner(
 
     let tmp_path = exe_dir.join(format!("ampland-update-{new_ver}.tmp"));
 
-    let actual_hash = download_with_hash(&binary_asset.browser_download_url, &tmp_path)
-        .map_err(|err| {
+    let actual_hash =
+        download_with_hash(&binary_asset.browser_download_url, &tmp_path).map_err(|err| {
             let _ = std::fs::remove_file(&tmp_path);
             if let AppError::Io { ref message } = err {
                 if message.contains("permission denied") || message.contains("Permission denied") {
@@ -284,9 +279,8 @@ fn self_update_inner(
         std::fs::set_permissions(&tmp_path, perms)?;
     }
 
-    replace_binary(&tmp_path, &current_exe, new_ver).map_err(|err| {
+    replace_binary(&tmp_path, &current_exe, new_ver).inspect_err(|_| {
         let _ = std::fs::remove_file(&tmp_path);
-        err
     })?;
 
     writeln!(out, "updated to {new_ver}").ok();
@@ -466,7 +460,9 @@ mod tests {
         let result = self_update_inner(Some(current), true, &base_url, &mut out, &mut inp);
         assert!(result.is_ok());
         // When a specific version is requested and matches, prints "already at version"
-        assert!(String::from_utf8(out).unwrap().contains("already at version"));
+        assert!(String::from_utf8(out)
+            .unwrap()
+            .contains("already at version"));
     }
 
     #[test]
@@ -480,7 +476,9 @@ mod tests {
         let result = self_update_inner(None, true, &base_url, &mut out, &mut inp);
         assert!(result.is_ok());
         // When fetching latest and already current, prints "already up to date"
-        assert!(String::from_utf8(out).unwrap().contains("already up to date"));
+        assert!(String::from_utf8(out)
+            .unwrap()
+            .contains("already up to date"));
     }
 
     fn serve_status_once(status_line: &'static str) -> String {

@@ -122,7 +122,13 @@ mod tests {
     #[test]
     fn update_command_parses_no_args() {
         let cli = Cli::try_parse_from(["ampland", "update"]).expect("parse");
-        assert!(matches!(cli.command, Command::Update { version: None, yes: false }));
+        assert!(matches!(
+            cli.command,
+            Command::Update {
+                version: None,
+                yes: false
+            }
+        ));
     }
 
     #[test]
@@ -137,7 +143,13 @@ mod tests {
     #[test]
     fn update_command_parses_yes_flag() {
         let cli = Cli::try_parse_from(["ampland", "update", "--yes"]).expect("parse");
-        assert!(matches!(cli.command, Command::Update { version: None, yes: true }));
+        assert!(matches!(
+            cli.command,
+            Command::Update {
+                version: None,
+                yes: true
+            }
+        ));
     }
 
     #[test]

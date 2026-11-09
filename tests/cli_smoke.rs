@@ -541,11 +541,8 @@ fn use_without_args_reads_volta_from_package_json() {
     fs::create_dir_all(&work_dir).expect("create work dir");
 
     let pkg_json = work_dir.join("package.json");
-    fs::write(
-        &pkg_json,
-        r#"{"name":"my-app","volta":{"node":"20.10.0"}}"#,
-    )
-    .expect("write package.json");
+    fs::write(&pkg_json, r#"{"name":"my-app","volta":{"node":"20.10.0"}}"#)
+        .expect("write package.json");
 
     let output = Command::new(env!("CARGO_BIN_EXE_ampland"))
         .current_dir(&work_dir)
@@ -794,7 +791,10 @@ fn unuse_global_removes_tool() {
     );
 
     let updated = fs::read_to_string(&config_file).expect("read config");
-    assert!(!updated.contains("node"), "node should be removed from config");
+    assert!(
+        !updated.contains("node"),
+        "node should be removed from config"
+    );
 }
 
 #[test]
@@ -840,7 +840,10 @@ fn unuse_scope_removes_tool_keeps_cache() {
     );
 
     let updated = fs::read_to_string(&config_file).expect("read config");
-    assert!(!updated.contains("node = \"22.0.0\""), "node should be removed from scope");
+    assert!(
+        !updated.contains("node = \"22.0.0\""),
+        "node should be removed from scope"
+    );
     assert!(cache_tool_dir.exists(), "cache should be kept");
 }
 
@@ -863,7 +866,10 @@ fn unuse_tool_not_configured_fails() {
         .output()
         .expect("run ampland");
 
-    assert!(!output.status.success(), "unuse of unconfigured tool should fail");
+    assert!(
+        !output.status.success(),
+        "unuse of unconfigured tool should fail"
+    );
 }
 
 #[test]

@@ -142,7 +142,6 @@ mod tests {
                 pattern: "workspace-*".to_string(),
                 tools: map(&[("node", "22.0.0")]),
             }],
-            ..Default::default()
         };
 
         let resolved = resolve_tool(&config, Path::new("other-dir"), "node").unwrap();
@@ -160,7 +159,6 @@ mod tests {
                 pattern: "*".to_string(),
                 tools: map(&[("node", "22.0.0")]),
             }],
-            ..Default::default()
         };
 
         let scoped = resolve_tool(&config, Path::new("workspace"), "node").unwrap();
@@ -194,7 +192,6 @@ mod tests {
                     tools: map(&[("node", "22.0.0")]),
                 },
             ],
-            ..Default::default()
         };
 
         let resolved = resolve_tool(&config, Path::new("workspace"), "node").unwrap();
@@ -232,7 +229,6 @@ mod tests {
                 pattern: "C:/workspace/**".to_string(),
                 tools: map(&[("node", "22.0.0")]),
             }],
-            ..Default::default()
         };
 
         let resolved = resolve_tool(&config, Path::new(r"C:\workspace\project"), "node").unwrap();
@@ -253,7 +249,6 @@ mod tests {
                 pattern: r"C:\workspace\**".to_string(),
                 tools: map(&[("node", "22.0.0")]),
             }],
-            ..Default::default()
         };
 
         let resolved = resolve_tool(&config, Path::new("C:/workspace/project"), "node").unwrap();

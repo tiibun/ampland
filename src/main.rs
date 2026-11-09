@@ -144,14 +144,15 @@ fn run() -> Result<(), AppError> {
                             });
                         }
                     } else {
-                        let package = manifest.resolve(&tool, &version, &target).ok_or_else(|| {
-                            AppError::Cache {
-                                message: format!(
-                                    "no installer for {tool}@{version} ({}/{})",
-                                    target.platform, target.arch
-                                ),
-                            }
-                        })?;
+                        let package =
+                            manifest.resolve(&tool, &version, &target).ok_or_else(|| {
+                                AppError::Cache {
+                                    message: format!(
+                                        "no installer for {tool}@{version} ({}/{})",
+                                        target.platform, target.arch
+                                    ),
+                                }
+                            })?;
                         let bin_path = install(&cache, &tool, &version, &package)?;
                         if !cli.quiet {
                             println!("installed {tool}@{version} -> {}", bin_path.display());
@@ -177,14 +178,13 @@ fn run() -> Result<(), AppError> {
         Command::Unuse { tool, global, path } => {
             let cwd = resolve_path(cli.path.clone(), path)?;
 
-            let location_label;
-            if global {
+            let location_label = if global {
                 if config.global.tools.remove(&tool).is_none() {
                     return Err(AppError::Config {
                         message: format!("{tool} is not set in global config"),
                     });
                 }
-                location_label = "global".to_string();
+                "global".to_string()
             } else {
                 let pattern = normalize_scope_pattern(&cwd);
                 if !config.remove_tool_from_scope(&pattern, &tool)? {
@@ -192,8 +192,8 @@ fn run() -> Result<(), AppError> {
                         message: format!("{tool} is not set for {pattern}"),
                     });
                 }
-                location_label = pattern;
-            }
+                pattern
+            };
 
             config.save(&config_path)?;
 
