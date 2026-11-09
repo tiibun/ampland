@@ -2,12 +2,16 @@ use std::env;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 pub(crate) const USER_AGENT: &str = "ampland-manifest-generate";
 pub(crate) const OUTPUT_DIR_DEFAULT: &str = "assets/manifest";
 pub(crate) const MAX_TEXT_BYTES: usize = 20 * 1024 * 1024;
+const FETCH_MAX_ATTEMPTS: u32 = 4;
+const FETCH_RETRY_BASE_DELAY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolSelector {
@@ -225,12 +229,74 @@ pub(crate) fn default_targets() -> Vec<TargetSpec> {
     ]
 }
 
+/// Outcome of a single fetch attempt, distinguishing failures worth retrying.
+enum FetchError {
+    Transient(String),
+    Fatal(String),
+}
+
 pub(crate) fn fetch_text(url: &str) -> Result<String, String> {
+    retry_with_backoff(
+        url,
+        FETCH_MAX_ATTEMPTS,
+        FETCH_RETRY_BASE_DELAY,
+        thread::sleep,
+        || fetch_text_once(url),
+    )
+}
+
+fn fetch_text_once(url: &str) -> Result<String, FetchError> {
     let response = ureq::get(url)
         .set("User-Agent", USER_AGENT)
         .call()
-        .map_err(|err| err.to_string())?;
-    read_response_text(response, url)
+        .map_err(classify_ureq_error)?;
+    // A body that fails mid-stream is a network hiccup; size/encoding errors are not.
+    read_response_text(response, url).map_err(FetchError::Fatal)
+}
+
+fn classify_ureq_error(err: ureq::Error) -> FetchError {
+    match &err {
+        ureq::Error::Status(code, _) if is_retryable_status(*code) => {
+            FetchError::Transient(err.to_string())
+        }
+        ureq::Error::Status(..) => FetchError::Fatal(err.to_string()),
+        ureq::Error::Transport(_) => FetchError::Transient(err.to_string()),
+    }
+}
+
+fn is_retryable_status(code: u16) -> bool {
+    code == 429 || (500..=599).contains(&code)
+}
+
+/// Runs `attempt` up to `max_attempts` times, sleeping with exponential backoff
+/// between transient failures. Fatal failures are returned immediately.
+fn retry_with_backoff<T>(
+    url: &str,
+    max_attempts: u32,
+    base_delay: Duration,
+    mut sleep: impl FnMut(Duration),
+    mut attempt: impl FnMut() -> Result<T, FetchError>,
+) -> Result<T, String> {
+    let mut tries = 1;
+    loop {
+        match attempt() {
+            Ok(value) => return Ok(value),
+            Err(FetchError::Fatal(message)) => return Err(message),
+            Err(FetchError::Transient(message)) if tries >= max_attempts => {
+                return Err(format!("{message} (gave up after {tries} attempts)"));
+            }
+            Err(FetchError::Transient(message)) => {
+                let delay = base_delay * 2u32.pow(tries - 1);
+                eprintln!(
+                    "manifest-generate: {url}: {message}; retrying in {}s (attempt {}/{max_attempts})",
+                    delay.as_secs(),
+                    tries + 1
+                );
+                sleep(delay);
+                tries += 1;
+            }
+        }
+    }
 }
 
 fn read_response_text(response: ureq::Response, url: &str) -> Result<String, String> {
@@ -272,9 +338,12 @@ mod tests {
 
     use std::path::PathBuf;
 
+    use std::time::Duration;
+
     use super::{
-        parse_args_from, selected_tools_label, write_manifest, GeneratorArgs, ManifestWriteOutcome,
-        ToolEntry, ToolManifest, ToolSelector, ToolVersion, OUTPUT_DIR_DEFAULT,
+        is_retryable_status, parse_args_from, retry_with_backoff, selected_tools_label,
+        write_manifest, FetchError, GeneratorArgs, ManifestWriteOutcome, ToolEntry, ToolManifest,
+        ToolSelector, ToolVersion, OUTPUT_DIR_DEFAULT,
     };
 
     fn sample_manifest(generated_at: &str, default_version: &str) -> ToolManifest {
@@ -367,6 +436,78 @@ mod tests {
         assert_eq!(selected_tools_label(None), "node and python");
         assert_eq!(selected_tools_label(Some(ToolSelector::Node)), "node");
         assert_eq!(selected_tools_label(Some(ToolSelector::Python)), "python");
+    }
+
+    #[test]
+    fn retryable_statuses_are_server_errors_and_rate_limits() {
+        assert!(is_retryable_status(429));
+        assert!(is_retryable_status(500));
+        assert!(is_retryable_status(504));
+        assert!(!is_retryable_status(404));
+        assert!(!is_retryable_status(403));
+    }
+
+    #[test]
+    fn retry_recovers_after_transient_failures() {
+        let mut sleeps = Vec::new();
+        let mut calls = 0;
+        let result = retry_with_backoff(
+            "https://example.com",
+            4,
+            Duration::from_secs(2),
+            |delay| sleeps.push(delay),
+            || {
+                calls += 1;
+                if calls < 3 {
+                    Err(FetchError::Transient("status code 504".to_string()))
+                } else {
+                    Ok("body")
+                }
+            },
+        );
+
+        assert_eq!(result, Ok("body"));
+        assert_eq!(calls, 3);
+        assert_eq!(sleeps, vec![Duration::from_secs(2), Duration::from_secs(4)]);
+    }
+
+    #[test]
+    fn retry_gives_up_after_max_attempts() {
+        let mut calls = 0;
+        let result: Result<(), String> = retry_with_backoff(
+            "https://example.com",
+            3,
+            Duration::from_secs(1),
+            |_| {},
+            || {
+                calls += 1;
+                Err(FetchError::Transient("status code 504".to_string()))
+            },
+        );
+
+        assert_eq!(
+            result,
+            Err("status code 504 (gave up after 3 attempts)".to_string())
+        );
+        assert_eq!(calls, 3);
+    }
+
+    #[test]
+    fn retry_does_not_repeat_fatal_errors() {
+        let mut calls = 0;
+        let result: Result<(), String> = retry_with_backoff(
+            "https://example.com",
+            4,
+            Duration::from_secs(1),
+            |_| panic!("should not sleep"),
+            || {
+                calls += 1;
+                Err(FetchError::Fatal("status code 404".to_string()))
+            },
+        );
+
+        assert_eq!(result, Err("status code 404".to_string()));
+        assert_eq!(calls, 1);
     }
 
     #[test]
