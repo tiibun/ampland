@@ -69,11 +69,7 @@ pub fn parse_mise_toml_file(path: &Path) -> Result<Vec<(String, String)>, AppErr
                 Some(v) => v.to_string(),
                 None => {
                     return Err(AppError::Config {
-                        message: format!(
-                            "empty version for tool '{}' in {}",
-                            tool,
-                            path.display()
-                        ),
+                        message: format!("empty version for tool '{}' in {}", tool, path.display()),
                     })
                 }
             },
@@ -113,11 +109,7 @@ pub fn parse_volta_from_package_json(path: &Path) -> Result<Vec<(String, String)
             Some(s) => s.to_string(),
             None => {
                 return Err(AppError::Config {
-                    message: format!(
-                        "invalid version for tool '{}' in {}",
-                        tool,
-                        path.display()
-                    ),
+                    message: format!("invalid version for tool '{}' in {}", tool, path.display()),
                 })
             }
         };
@@ -235,11 +227,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let path = temp_dir.path().join("mise.toml");
 
-        std::fs::write(
-            &path,
-            "[tools]\nnode = \"20.10.0\"\npython = \"3.11.5\"\n",
-        )
-        .expect("write file");
+        std::fs::write(&path, "[tools]\nnode = \"20.10.0\"\npython = \"3.11.5\"\n")
+            .expect("write file");
 
         let mut result = parse_mise_toml_file(&path).expect("parse");
         result.sort_by(|a, b| a.0.cmp(&b.0));

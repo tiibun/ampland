@@ -182,7 +182,6 @@ mod tests {
                 pattern: "workspace/**".into(),
                 tools: map(&[("bun", "1.2.0")]),
             }],
-            ..Default::default()
         };
         config.save(&path).expect("save");
         let (loaded, loaded_path) = Config::load(Some(&path)).expect("load");
@@ -213,7 +212,6 @@ mod tests {
                 pattern: "/workspace/**".into(),
                 tools: map(&[("pnpm", "9.0.0"), ("node", "22.0.0")]),
             }],
-            ..Default::default()
         };
 
         config.save(&path).expect("save");
@@ -241,7 +239,6 @@ mod tests {
                     tools: map(&[("bun", "1.1.0")]),
                 },
             ],
-            ..Default::default()
         };
 
         let normalized = config.normalized_scopes().expect("normalized scopes");
@@ -261,7 +258,6 @@ mod tests {
                 tools: map(&[("node", "20.0.0"), ("bun", "1.0.0")]),
             },
             scopes: vec![],
-            ..Default::default()
         };
 
         let usages = config.is_tool_version_in_use("node", "20.0.0");
@@ -288,7 +284,6 @@ mod tests {
                     tools: map(&[("bun", "1.0.0")]),
                 },
             ],
-            ..Default::default()
         };
 
         let usages = config.is_tool_version_in_use("node", "22.0.0");

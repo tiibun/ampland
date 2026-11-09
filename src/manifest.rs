@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use semver::Version;
 use serde::Deserialize;
+use std::collections::HashSet;
 
 use crate::error::AppError;
 const EMBEDDED_TOOL_MANIFESTS: &[&str] = &[

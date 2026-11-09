@@ -675,7 +675,6 @@ name = "node"
                 pattern: "*".to_string(),
                 tools: map(&[("node", "22.0.0")]),
             }],
-            ..Default::default()
         };
         let manifest = sample_manifest();
         let target = Target {
@@ -1014,8 +1013,7 @@ name = "node"
         fs::create_dir_all(&node22_dir).expect("mkdir");
         fs::write(node22_dir.join(".installed"), b"").expect("marker");
 
-        let found =
-            find_installed_versions_with_bin("eslint", &cache).expect("find_installed");
+        let found = find_installed_versions_with_bin("eslint", &cache).expect("find_installed");
         assert_eq!(found, vec!["node@24.0.0".to_string()]);
     }
 
@@ -1104,7 +1102,11 @@ name = "node"
     #[test]
     fn resolve_bin_path_errors_when_absolute_path_missing() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let abs_path = temp.path().join("nonexistent").to_string_lossy().to_string();
+        let abs_path = temp
+            .path()
+            .join("nonexistent")
+            .to_string_lossy()
+            .to_string();
         let config = Config {
             global: Global {
                 tools: map(&[("node", &abs_path)]),
