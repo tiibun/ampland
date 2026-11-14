@@ -62,4 +62,4 @@ jobs:
       - name: Push release commit and tag
         env:
           VERSION: ${{ steps.bump_version.outputs.version }}
-        run: git push origin HEAD:main "v${VERSION}"
+        run: git push --atomic origin HEAD:main "v${VERSION}"
