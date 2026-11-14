@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+  # Dispatched on a tag ref by release-manifest-update, whose tag push cannot
+  # trigger this workflow directly.
+  workflow_dispatch:
 
 permissions:
   contents: write

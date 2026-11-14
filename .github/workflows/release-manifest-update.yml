@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: release-manifest-update
@@ -63,3 +64,11 @@ jobs:
         env:
           VERSION: ${{ steps.bump_version.outputs.version }}
         run: git push --atomic origin HEAD:main "v${VERSION}"
+
+      # Tags pushed with GITHUB_TOKEN do not trigger other workflows, so the
+      # tag push above never starts build-binaries. workflow_dispatch is exempt.
+      - name: Start binary build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump_version.outputs.version }}
+        run: gh workflow run build-binaries.yml --ref "v${VERSION}"
