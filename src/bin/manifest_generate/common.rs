@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::thread;
@@ -265,8 +265,7 @@ fn fetch_text_once(url: &str) -> Result<String, FetchError> {
         .header("User-Agent", USER_AGENT)
         .call()
         .map_err(classify_ureq_error)?;
-    // A body that fails mid-stream is a network hiccup; size/encoding errors are not.
-    read_response_text(response, url).map_err(FetchError::Fatal)
+    read_text_body(response.into_body().into_reader(), url)
 }
 
 fn classify_ureq_error(err: ureq::Error) -> FetchError {
@@ -329,31 +328,43 @@ fn retry_with_backoff<T>(
     }
 }
 
-fn read_response_text(
-    response: ureq::http::Response<ureq::Body>,
-    url: &str,
-) -> Result<String, String> {
-    let mut reader = response.into_body().into_reader();
+/// Reads a response body as UTF-8 text. A body that fails mid-stream is a
+/// network hiccup and is retried; size/encoding errors are not.
+fn read_text_body(mut reader: impl Read, url: &str) -> Result<String, FetchError> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
     let mut total = 0usize;
 
     loop {
-        let read = reader.read(&mut chunk).map_err(|err| err.to_string())?;
+        let read = reader.read(&mut chunk).map_err(classify_body_io_error)?;
         if read == 0 {
             break;
         }
         total = total.saturating_add(read);
         if total > MAX_TEXT_BYTES {
-            return Err(format!(
+            return Err(FetchError::Fatal(format!(
                 "response too big for {url} (>{} bytes)",
                 MAX_TEXT_BYTES
-            ));
+            )));
         }
         buf.extend_from_slice(&chunk[..read]);
     }
 
-    String::from_utf8(buf).map_err(|err| err.to_string())
+    String::from_utf8(buf).map_err(|err| FetchError::Fatal(err.to_string()))
+}
+
+/// ureq's body reader surfaces its own errors wrapped in `io::Error`; classify
+/// those like request errors. Plain I/O errors (resets, EOF) are transient.
+fn classify_body_io_error(err: io::Error) -> FetchError {
+    let transient = err
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<ureq::Error>())
+        .is_none_or(is_transient_ureq_error);
+    if transient {
+        FetchError::Transient(err.to_string())
+    } else {
+        FetchError::Fatal(err.to_string())
+    }
 }
 
 pub(crate) fn fetch_sha256(url: &str) -> Result<String, String> {
@@ -374,9 +385,10 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        is_retryable_status, is_transient_ureq_error, parse_args_from, retry_with_backoff,
-        selected_tools_label, write_manifest, FetchError, GeneratorArgs, ManifestWriteOutcome,
-        ToolEntry, ToolManifest, ToolSelector, ToolVersion, OUTPUT_DIR_DEFAULT,
+        is_retryable_status, is_transient_ureq_error, parse_args_from, read_text_body,
+        retry_with_backoff, selected_tools_label, write_manifest, FetchError, GeneratorArgs,
+        ManifestWriteOutcome, ToolEntry, ToolManifest, ToolSelector, ToolVersion, MAX_TEXT_BYTES,
+        OUTPUT_DIR_DEFAULT,
     };
 
     fn sample_manifest(generated_at: &str, default_version: &str) -> ToolManifest {
@@ -478,6 +490,83 @@ mod tests {
         assert!(is_retryable_status(504));
         assert!(!is_retryable_status(404));
         assert!(!is_retryable_status(403));
+    }
+
+    /// Yields `data`, then fails with `err` instead of reaching EOF.
+    struct FailingReader {
+        data: &'static [u8],
+        err: Option<std::io::Error>,
+    }
+
+    impl std::io::Read for FailingReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if !self.data.is_empty() {
+                let n = self.data.len().min(buf.len());
+                buf[..n].copy_from_slice(&self.data[..n]);
+                self.data = &self.data[n..];
+                return Ok(n);
+            }
+            Err(self.err.take().expect("read after error"))
+        }
+    }
+
+    #[test]
+    fn body_read_returns_text() {
+        let text = read_text_body(&b"hello"[..], "http://x")
+            .ok()
+            .expect("text");
+        assert_eq!(text, "hello");
+    }
+
+    #[test]
+    fn body_reset_mid_stream_is_transient() {
+        let reader = FailingReader {
+            data: b"partial",
+            err: Some(std::io::Error::from(std::io::ErrorKind::ConnectionReset)),
+        };
+        assert!(matches!(
+            read_text_body(reader, "http://x"),
+            Err(FetchError::Transient(_))
+        ));
+    }
+
+    #[test]
+    fn body_wrapped_ureq_errors_follow_ureq_classification() {
+        let transient = FailingReader {
+            data: b"",
+            err: Some(ureq::Error::ConnectionFailed.into_io()),
+        };
+        assert!(matches!(
+            read_text_body(transient, "http://x"),
+            Err(FetchError::Transient(_))
+        ));
+
+        let fatal = FailingReader {
+            data: b"",
+            err: Some(ureq::Error::BodyExceedsLimit(1).into_io()),
+        };
+        assert!(matches!(
+            read_text_body(fatal, "http://x"),
+            Err(FetchError::Fatal(_))
+        ));
+    }
+
+    #[test]
+    fn body_invalid_utf8_is_fatal() {
+        assert!(matches!(
+            read_text_body(&b"\xff\xfe"[..], "http://x"),
+            Err(FetchError::Fatal(_))
+        ));
+    }
+
+    #[test]
+    fn body_too_big_is_fatal() {
+        use std::io::Read;
+        let reader = std::io::repeat(b'a').take(MAX_TEXT_BYTES as u64 + 1);
+        assert!(matches!(
+            read_text_body(reader, "http://x"),
+            Err(FetchError::Fatal(_))
+        ));
     }
 
     #[test]
