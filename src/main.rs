@@ -3,6 +3,8 @@ mod cli;
 mod config;
 mod doctor;
 mod error;
+mod hash;
+mod http;
 mod installer;
 mod manifest;
 mod paths;

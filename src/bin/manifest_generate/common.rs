@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ pub(crate) const OUTPUT_DIR_DEFAULT: &str = "assets/manifest";
 pub(crate) const MAX_TEXT_BYTES: usize = 20 * 1024 * 1024;
 const FETCH_MAX_ATTEMPTS: u32 = 4;
 const FETCH_RETRY_BASE_DELAY: Duration = Duration::from_secs(2);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolSelector {
@@ -245,9 +247,22 @@ pub(crate) fn fetch_text(url: &str) -> Result<String, String> {
     )
 }
 
+/// Shared HTTP agent with an explicit connect timeout (ureq 3 has none by
+/// default). Proxies come from the environment, matching `src/http.rs`.
+fn http_agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        let config = ureq::Agent::config_builder()
+            .timeout_connect(Some(CONNECT_TIMEOUT))
+            .build();
+        ureq::Agent::new_with_config(config)
+    })
+}
+
 fn fetch_text_once(url: &str) -> Result<String, FetchError> {
-    let response = ureq::get(url)
-        .set("User-Agent", USER_AGENT)
+    let response = http_agent()
+        .get(url)
+        .header("User-Agent", USER_AGENT)
         .call()
         .map_err(classify_ureq_error)?;
     // A body that fails mid-stream is a network hiccup; size/encoding errors are not.
@@ -255,12 +270,27 @@ fn fetch_text_once(url: &str) -> Result<String, FetchError> {
 }
 
 fn classify_ureq_error(err: ureq::Error) -> FetchError {
-    match &err {
-        ureq::Error::Status(code, _) if is_retryable_status(*code) => {
-            FetchError::Transient(err.to_string())
-        }
-        ureq::Error::Status(..) => FetchError::Fatal(err.to_string()),
-        ureq::Error::Transport(_) => FetchError::Transient(err.to_string()),
+    if is_transient_ureq_error(&err) {
+        FetchError::Transient(err.to_string())
+    } else {
+        FetchError::Fatal(err.to_string())
+    }
+}
+
+/// Only network-level hiccups and retryable HTTP statuses are worth retrying.
+/// Deterministic failures (bad URI, redirect loops, TLS/cert errors, size
+/// limits, ...) fail immediately.
+fn is_transient_ureq_error(err: &ureq::Error) -> bool {
+    match err {
+        ureq::Error::StatusCode(code) => is_retryable_status(*code),
+        ureq::Error::Io(_)
+        | ureq::Error::Timeout(_)
+        | ureq::Error::HostNotFound
+        | ureq::Error::ConnectionFailed
+        | ureq::Error::ConnectProxyFailed(_)
+        | ureq::Error::Protocol(_)
+        | ureq::Error::BodyStalled => true,
+        _ => false,
     }
 }
 
@@ -299,8 +329,11 @@ fn retry_with_backoff<T>(
     }
 }
 
-fn read_response_text(response: ureq::Response, url: &str) -> Result<String, String> {
-    let mut reader = response.into_reader();
+fn read_response_text(
+    response: ureq::http::Response<ureq::Body>,
+    url: &str,
+) -> Result<String, String> {
+    let mut reader = response.into_body().into_reader();
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
     let mut total = 0usize;
@@ -341,9 +374,9 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        is_retryable_status, parse_args_from, retry_with_backoff, selected_tools_label,
-        write_manifest, FetchError, GeneratorArgs, ManifestWriteOutcome, ToolEntry, ToolManifest,
-        ToolSelector, ToolVersion, OUTPUT_DIR_DEFAULT,
+        is_retryable_status, is_transient_ureq_error, parse_args_from, retry_with_backoff,
+        selected_tools_label, write_manifest, FetchError, GeneratorArgs, ManifestWriteOutcome,
+        ToolEntry, ToolManifest, ToolSelector, ToolVersion, OUTPUT_DIR_DEFAULT,
     };
 
     fn sample_manifest(generated_at: &str, default_version: &str) -> ToolManifest {
@@ -445,6 +478,26 @@ mod tests {
         assert!(is_retryable_status(504));
         assert!(!is_retryable_status(404));
         assert!(!is_retryable_status(403));
+    }
+
+    #[test]
+    fn only_network_hiccups_are_transient_ureq_errors() {
+        use std::io;
+
+        assert!(is_transient_ureq_error(&ureq::Error::StatusCode(503)));
+        assert!(is_transient_ureq_error(&ureq::Error::ConnectionFailed));
+        assert!(is_transient_ureq_error(&ureq::Error::HostNotFound));
+        assert!(is_transient_ureq_error(&ureq::Error::Io(io::Error::from(
+            io::ErrorKind::ConnectionReset
+        ))));
+
+        assert!(!is_transient_ureq_error(&ureq::Error::StatusCode(404)));
+        assert!(!is_transient_ureq_error(&ureq::Error::BadUri(
+            "nope".to_string()
+        )));
+        assert!(!is_transient_ureq_error(&ureq::Error::TooManyRedirects));
+        assert!(!is_transient_ureq_error(&ureq::Error::RedirectFailed));
+        assert!(!is_transient_ureq_error(&ureq::Error::BodyExceedsLimit(1)));
     }
 
     #[test]
