@@ -7,7 +7,16 @@ use crate::common::{
     default_targets, fetch_text, TargetSpec, ToolEntry, ToolManifest, ToolVersion,
 };
 
-const NODE_MAJORS: &[u64] = &[25, 24, 22, 20, 18];
+/// Oldest Node.js major line included in the manifest.
+const NODE_MIN_MAJOR: u64 = 18;
+
+/// From this major onward every release line is kept, even odd ones
+/// (odd lines before this were short-lived "Current" releases).
+const NODE_ALL_MAJORS_FROM: u64 = 25;
+
+fn is_supported_node_major(major: u64) -> bool {
+    major >= NODE_MIN_MAJOR && (major.is_multiple_of(2) || major >= NODE_ALL_MAJORS_FROM)
+}
 
 #[derive(Debug, Deserialize)]
 struct NodeIndexEntry {
@@ -95,7 +104,7 @@ fn select_node_versions(entries: Vec<NodeIndexEntry>) -> Vec<Version> {
         if !parsed.pre.is_empty() {
             continue;
         }
-        if !NODE_MAJORS.contains(&parsed.major) {
+        if !is_supported_node_major(parsed.major) {
             continue;
         }
 
@@ -190,7 +199,22 @@ fn node_bin_paths(version: &str, target: TargetSpec) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{select_node_versions, should_log_node_progress, NodeIndexEntry};
+    use super::{
+        is_supported_node_major, select_node_versions, should_log_node_progress, NodeIndexEntry,
+    };
+
+    #[test]
+    fn supported_node_majors_include_new_releases() {
+        for major in [18, 20, 22, 24, 25, 26, 27, 28] {
+            assert!(
+                is_supported_node_major(major),
+                "{major} should be supported"
+            );
+        }
+        for major in [16, 17, 19, 21, 23] {
+            assert!(!is_supported_node_major(major), "{major} should be skipped");
+        }
+    }
 
     #[test]
     fn select_node_versions_keeps_all_matching_releases_descending() {
@@ -203,6 +227,12 @@ mod tests {
             },
             NodeIndexEntry {
                 version: "v25.0.0".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v26.0.0".to_string(),
+            },
+            NodeIndexEntry {
+                version: "v16.20.2".to_string(),
             },
             NodeIndexEntry {
                 version: "v20.18.1".to_string(),
@@ -227,7 +257,7 @@ mod tests {
             .collect();
         assert_eq!(
             version_strings,
-            vec!["25.0.0", "24.1.0", "24.0.0", "20.18.1"]
+            vec!["26.0.0", "25.0.0", "24.1.0", "24.0.0", "20.18.1"]
         );
     }
 

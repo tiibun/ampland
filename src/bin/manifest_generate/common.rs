@@ -199,6 +199,65 @@ pub(crate) fn write_manifest(
     }
 }
 
+/// Reads a previously generated manifest, if one exists at `path`.
+pub(crate) fn read_existing_manifest(path: &Path) -> Result<Option<ToolManifest>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let manifest = toml::from_str(&text)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+    Ok(Some(manifest))
+}
+
+/// Carries over version entries from `previous` that the fresh `generated`
+/// manifest no longer lists, so exact version pins keep resolving after an
+/// upstream source stops advertising older releases. Entries present in both
+/// keep the freshly generated data. Versions are ordered newest first, with
+/// each version's target order preserved.
+pub(crate) fn retain_previous_versions(generated: &mut ToolManifest, previous: &ToolManifest) {
+    for tool in &mut generated.tools {
+        let Some(previous_tool) = previous.tools.iter().find(|entry| entry.name == tool.name)
+        else {
+            continue;
+        };
+
+        let mut retained = 0usize;
+        for entry in &previous_tool.versions {
+            let already_listed = tool.versions.iter().any(|current| {
+                current.ver == entry.ver
+                    && current.platform == entry.platform
+                    && current.arch == entry.arch
+            });
+            if !already_listed {
+                tool.versions.push(entry.clone());
+                retained += 1;
+            }
+        }
+        if retained == 0 {
+            continue;
+        }
+
+        tool.versions
+            .sort_by(|a, b| compare_versions_desc(&a.ver, &b.ver));
+        eprintln!(
+            "{}: retained {retained} entries from the previous manifest",
+            tool.name
+        );
+    }
+}
+
+fn compare_versions_desc(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse = |value: &str| semver::Version::parse(value.trim_start_matches('v')).ok();
+    match (parse(a), parse(b)) {
+        (Some(a), Some(b)) => b.cmp(&a),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => b.cmp(a),
+    }
+}
+
 fn manifests_match_ignoring_generated_at(
     existing: &ToolManifest,
     generated: &ToolManifest,
@@ -385,11 +444,98 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        is_retryable_status, is_transient_ureq_error, parse_args_from, read_text_body,
-        retry_with_backoff, selected_tools_label, write_manifest, FetchError, GeneratorArgs,
-        ManifestWriteOutcome, ToolEntry, ToolManifest, ToolSelector, ToolVersion, MAX_TEXT_BYTES,
-        OUTPUT_DIR_DEFAULT,
+        is_retryable_status, is_transient_ureq_error, parse_args_from, read_existing_manifest,
+        read_text_body, retain_previous_versions, retry_with_backoff, selected_tools_label,
+        write_manifest, FetchError, GeneratorArgs, ManifestWriteOutcome, ToolEntry, ToolManifest,
+        ToolSelector, ToolVersion, MAX_TEXT_BYTES, OUTPUT_DIR_DEFAULT,
     };
+
+    fn python_version(ver: &str, platform: &str, url: &str) -> ToolVersion {
+        ToolVersion {
+            ver: ver.to_string(),
+            platform: platform.to_string(),
+            arch: "x64".to_string(),
+            url: url.to_string(),
+            sha256: "abc".to_string(),
+            format: "tar.gz".to_string(),
+            bin_paths: vec!["python/bin/python".to_string()],
+        }
+    }
+
+    fn python_manifest(versions: Vec<ToolVersion>) -> ToolManifest {
+        ToolManifest {
+            version: 1,
+            generated_at: "2026-01-01T00:00:00Z".to_string(),
+            tools: vec![ToolEntry {
+                name: "python".to_string(),
+                vendor: "cpython".to_string(),
+                default_version: "3.14.10".to_string(),
+                versions,
+            }],
+        }
+    }
+
+    #[test]
+    fn retain_previous_versions_keeps_dropped_entries_sorted_newest_first() {
+        let previous = python_manifest(vec![
+            python_version("3.14.9", "macos", "old-3.14.9-macos"),
+            python_version("3.14.9", "linux", "old-3.14.9-linux"),
+            python_version("3.14.7", "macos", "old-3.14.7-macos"),
+            python_version("3.14.7", "linux", "old-3.14.7-linux"),
+        ]);
+        let mut generated = python_manifest(vec![
+            python_version("3.14.10", "macos", "new-3.14.10-macos"),
+            python_version("3.14.10", "linux", "new-3.14.10-linux"),
+            python_version("3.14.9", "macos", "new-3.14.9-macos"),
+            python_version("3.14.9", "linux", "new-3.14.9-linux"),
+        ]);
+
+        retain_previous_versions(&mut generated, &previous);
+
+        let urls: Vec<&str> = generated.tools[0]
+            .versions
+            .iter()
+            .map(|entry| entry.url.as_str())
+            .collect();
+        assert_eq!(
+            urls,
+            vec![
+                "new-3.14.10-macos",
+                "new-3.14.10-linux",
+                "new-3.14.9-macos",
+                "new-3.14.9-linux",
+                "old-3.14.7-macos",
+                "old-3.14.7-linux",
+            ]
+        );
+        assert_eq!(generated.tools[0].default_version, "3.14.10");
+    }
+
+    #[test]
+    fn retain_previous_versions_orders_by_semver_not_string() {
+        let previous = python_manifest(vec![python_version("3.9.20", "linux", "old")]);
+        let mut generated = python_manifest(vec![python_version("3.10.1", "linux", "new")]);
+
+        retain_previous_versions(&mut generated, &previous);
+
+        let vers: Vec<&str> = generated.tools[0]
+            .versions
+            .iter()
+            .map(|entry| entry.ver.as_str())
+            .collect();
+        assert_eq!(vers, vec!["3.10.1", "3.9.20"]);
+    }
+
+    #[test]
+    fn read_existing_manifest_returns_none_when_missing_and_round_trips() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("python.toml");
+        assert_eq!(read_existing_manifest(&path).expect("read"), None);
+
+        let manifest = python_manifest(vec![python_version("3.14.7", "linux", "u")]);
+        write_manifest(&path, &manifest).expect("write");
+        assert_eq!(read_existing_manifest(&path).expect("read"), Some(manifest));
+    }
 
     fn sample_manifest(generated_at: &str, default_version: &str) -> ToolManifest {
         ToolManifest {
