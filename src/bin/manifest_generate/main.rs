@@ -5,7 +5,10 @@ mod python;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use crate::common::{parse_args, selected_tools_label, write_manifest, ToolSelector};
+use crate::common::{
+    parse_args, read_existing_manifest, retain_previous_versions, selected_tools_label,
+    write_manifest, ToolSelector,
+};
 
 fn main() {
     if let Err(err) = run() {
@@ -41,7 +44,12 @@ fn run() -> Result<(), String> {
     if matches!(args.tool, None | Some(ToolSelector::Python)) {
         let path = args.output_dir.join("python.toml");
         eprintln!("manifest-generate: python generation started");
-        let manifest = python::generate_python_manifest(&generated_at)?;
+        let mut manifest = python::generate_python_manifest(&generated_at)?;
+        // python-build-standalone only exposes recent releases through the API we
+        // query, so keep older entries to avoid breaking exact version pins.
+        if let Some(previous) = read_existing_manifest(&path)? {
+            retain_previous_versions(&mut manifest, &previous);
+        }
         let outcome = write_manifest(&path, &manifest)?;
         eprintln!(
             "manifest-generate: python generation finished ({})",
