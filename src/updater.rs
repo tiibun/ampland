@@ -2,9 +2,8 @@ use crate::error::AppError;
 use crate::manifest::Target;
 use semver::Version;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::fs::File;
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -97,21 +96,9 @@ fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
             message: format!("download failed for {url}: {err}"),
         })?;
 
-    let mut reader = response.into_body().into_reader();
-    let mut file = File::create(dest)?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 64 * 1024];
-
-    loop {
-        let count = reader.read(&mut buf)?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buf[..count]);
-        file.write_all(&buf[..count])?;
-    }
-
-    Ok(crate::hash::to_hex(&hasher.finalize()))
+    let file = File::create(dest)?;
+    let (_, hex) = crate::hash::copy_and_sha256(response.into_body().into_reader(), file)?;
+    Ok(hex)
 }
 
 fn replace_binary(temp_path: &Path, target: &Path, _new_ver: &str) -> Result<(), AppError> {
