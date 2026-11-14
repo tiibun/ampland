@@ -30,17 +30,18 @@ fn fetch_release_from(version: Option<&str>, base_url: &str) -> Result<Release, 
         }
     };
 
-    let response = match ureq::get(&url)
-        .set("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
+    let response = match crate::http::agent()
+        .get(&url)
+        .header("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
         .call()
     {
         Ok(r) => r,
-        Err(ureq::Error::Status(403 | 429, _)) => {
+        Err(ureq::Error::StatusCode(403 | 429)) => {
             return Err(AppError::Other {
                 message: "GitHub API rate limit exceeded; try again later".to_string(),
             });
         }
-        Err(ureq::Error::Status(404, _)) => {
+        Err(ureq::Error::StatusCode(404)) => {
             let msg = match version {
                 None => "no releases found on GitHub".to_string(),
                 Some(v) => format!("release v{} not found on GitHub", v.trim_start_matches('v')),
@@ -54,7 +55,7 @@ fn fetch_release_from(version: Option<&str>, base_url: &str) -> Result<Release, 
         }
     };
 
-    let body = response.into_string().map_err(|err| AppError::Other {
+    let body = crate::http::read_text(response).map_err(|err| AppError::Other {
         message: format!("failed to read release response: {err}"),
     })?;
 
@@ -88,14 +89,15 @@ fn asset_name_for_current_target() -> Result<String, AppError> {
 }
 
 fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
-    let response = ureq::get(url)
-        .set("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
+    let response = crate::http::agent()
+        .get(url)
+        .header("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
         .call()
         .map_err(|err| AppError::Other {
             message: format!("download failed for {url}: {err}"),
         })?;
 
-    let mut reader = response.into_reader();
+    let mut reader = response.into_body().into_reader();
     let mut file = File::create(dest)?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
@@ -109,7 +111,7 @@ fn download_with_hash(url: &str, dest: &Path) -> Result<String, AppError> {
         file.write_all(&buf[..count])?;
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(crate::hash::to_hex(&hasher.finalize()))
 }
 
 fn replace_binary(temp_path: &Path, target: &Path, _new_ver: &str) -> Result<(), AppError> {
@@ -158,13 +160,14 @@ pub fn cleanup_old_binary() {
 }
 
 fn fetch_text(url: &str) -> Result<String, AppError> {
-    let response = ureq::get(url)
-        .set("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
+    let response = crate::http::agent()
+        .get(url)
+        .header("User-Agent", &format!("ampland/{CURRENT_VERSION}"))
         .call()
         .map_err(|err| AppError::Other {
             message: format!("failed to fetch {url}: {err}"),
         })?;
-    response.into_string().map_err(|err| AppError::Other {
+    crate::http::read_text(response).map_err(|err| AppError::Other {
         message: format!("failed to read response from {url}: {err}"),
     })
 }
@@ -418,7 +421,7 @@ mod tests {
         let expected_hex = {
             let mut h = Sha256::new();
             h.update(&payload);
-            format!("{:x}", h.finalize())
+            crate::hash::to_hex(&h.finalize())
         };
         let url = serve_bytes_once(payload);
         let temp = tempfile::tempdir().expect("tempdir");

@@ -181,11 +181,14 @@ fn find_bin_path<'a>(bin_name: &str, bin_paths: &'a [String]) -> Option<&'a str>
 }
 
 fn download(url: &str, dest: &Path, expected_sha256: &str) -> Result<u64, AppError> {
-    let response = ureq::get(url).call().map_err(|err| AppError::Cache {
-        message: format!("download failed for {url}: {err}"),
-    })?;
+    let response = crate::http::agent()
+        .get(url)
+        .call()
+        .map_err(|err| AppError::Cache {
+            message: format!("download failed for {url}: {err}"),
+        })?;
 
-    let mut reader = response.into_reader();
+    let mut reader = response.into_body().into_reader();
     let mut file = File::create(dest)?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
@@ -201,7 +204,7 @@ fn download(url: &str, dest: &Path, expected_sha256: &str) -> Result<u64, AppErr
         size += count as u64;
     }
 
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = crate::hash::to_hex(&hasher.finalize());
     if normalize_hex(expected_sha256) != normalize_hex(&actual) {
         return Err(AppError::Cache {
             message: "sha256 mismatch for download".to_string(),
@@ -386,7 +389,7 @@ mod tests {
         let payload = b"#!/bin/sh\necho ok\n".to_vec();
         let mut hasher = Sha256::new();
         hasher.update(&payload);
-        let sha256 = format!("{:x}", hasher.finalize());
+        let sha256 = crate::hash::to_hex(&hasher.finalize());
 
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");

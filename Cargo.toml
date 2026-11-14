@@ -10,20 +10,20 @@ homepage = "https://github.com/tiibun/ampland"
 
 [dependencies]
 clap = { version = "4.5.3", features = ["derive"] }
-directories = "5.0.1"
+directories = "6.0.0"
 fs2 = "0.4.3"
-globset = "=0.4.14"
+globset = "0.4.21"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
 semver = "1.0.22"
-thiserror = "1.0.58"
-toml = "0.8.12"
+thiserror = "2.0.21"
+toml = "1.2.1"
 flate2 = "1.0.28"
-sha2 = "0.10.8"
+sha2 = "0.11.1"
 time = { version = "0.3.47", features = ["formatting"] }
 tar = "0.4.46"
 tempfile = "3.10.1"
-ureq = { version = "2.9.6", features = ["tls"] }
+ureq = "3.5.2"
 xz2 = "0.1.7"
 zip = { version = "9.5.0", default-features = false, features = ["deflate"] }
 
