@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ampland"
-version = "0.6.12"
+version = "0.7.0"
 dependencies = [
  "clap",
  "directories",
