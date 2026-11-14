@@ -1,9 +1,7 @@
 use std::fs::{self, File};
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
-use sha2::{Digest, Sha256};
 use tar::Archive;
 use tempfile::TempDir;
 use xz2::read::XzDecoder;
@@ -188,24 +186,9 @@ fn download(url: &str, dest: &Path, expected_sha256: &str) -> Result<u64, AppErr
             message: format!("download failed for {url}: {err}"),
         })?;
 
-    let mut reader = response.into_body().into_reader();
-    let mut file = File::create(dest)?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 64 * 1024];
-    let mut size = 0u64;
-
-    loop {
-        let count = reader.read(&mut buf)?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buf[..count]);
-        file.write_all(&buf[..count])?;
-        size += count as u64;
-    }
-
-    let actual = crate::hash::to_hex(&hasher.finalize());
-    if normalize_hex(expected_sha256) != normalize_hex(&actual) {
+    let file = File::create(dest)?;
+    let (size, actual) = crate::hash::copy_and_sha256(response.into_body().into_reader(), file)?;
+    if normalize_hex(expected_sha256) != actual {
         return Err(AppError::Cache {
             message: "sha256 mismatch for download".to_string(),
         });
@@ -274,6 +257,7 @@ fn make_executable(path: &Path) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
     use std::net::TcpListener;
     use std::thread;
 
