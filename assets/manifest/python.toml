@@ -1,5 +1,5 @@
 version = 1
-generated_at = "2026-11-13T05:52:55.759325694Z"
+generated_at = "2026-11-28T07:03:21.343216515Z"
 
 [[tool]]
 name = "python"
@@ -1207,8 +1207,8 @@ bin_paths = ["python/python.exe"]
 ver = "3.12.15"
 platform = "macos"
 arch = "arm64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.12.15%2B20261013-aarch64-apple-darwin-install_only.tar.gz"
-sha256 = "ba32036ad8f4c434d97a1ee7feef8b7edc0fac16777639b97e39c74a108e4440"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.12.15%2B20261021-aarch64-apple-darwin-install_only.tar.gz"
+sha256 = "a18cc33862b53bd54a148c710def5375c1b47470cccedf817a19c2d211764584"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1219,8 +1219,8 @@ bin_paths = [
 ver = "3.12.15"
 platform = "macos"
 arch = "x64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.12.15%2B20261013-x86_64-apple-darwin-install_only.tar.gz"
-sha256 = "9686ddd8639b855905447ea4a16eb54a804a9ef12afbe7c9ecb1412d9c1fbc98"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.12.15%2B20261021-x86_64-apple-darwin-install_only.tar.gz"
+sha256 = "869e0b30959beccc616ce14907439f4d0b3170c5830a2362dade07f07b0ed3b8"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1231,8 +1231,8 @@ bin_paths = [
 ver = "3.12.15"
 platform = "linux"
 arch = "arm64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.12.15%2B20261013-aarch64-unknown-linux-gnu-install_only.tar.gz"
-sha256 = "34a43010cc05982d8b5debbad7d09f7b1200117ebf018f7acfd656895e408205"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.12.15%2B20261021-aarch64-unknown-linux-gnu-install_only.tar.gz"
+sha256 = "f53cca8fcd20805bddaa8bff1ef722a6918f8225d37561bd36ad901d13d580af"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1243,8 +1243,8 @@ bin_paths = [
 ver = "3.12.15"
 platform = "linux"
 arch = "x64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.12.15%2B20261013-x86_64-unknown-linux-gnu-install_only.tar.gz"
-sha256 = "5d546fc004fc2435fa142eb8f42ed8de5eb4725963dc22f7e6671014a80eb560"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.12.15%2B20261021-x86_64-unknown-linux-gnu-install_only.tar.gz"
+sha256 = "5ff9f0602ce964a529ed1e8555d3abab6341926d724402ba9a15e9e877191124"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1255,8 +1255,8 @@ bin_paths = [
 ver = "3.12.15"
 platform = "windows"
 arch = "x64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.12.15%2B20261013-x86_64-pc-windows-msvc-install_only.tar.gz"
-sha256 = "bbc902d4d187ac4914915bf538196a064b49109a33a104965b5164ced5b80a1e"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.12.15%2B20261021-x86_64-pc-windows-msvc-install_only.tar.gz"
+sha256 = "be7f14464d1d66f84429ad27e01f6d1482963afff64a2fb5256b2a51c7b5d398"
 format = "tar.gz"
 bin_paths = ["python/python.exe"]
 
@@ -1492,8 +1492,8 @@ bin_paths = ["python/python.exe"]
 ver = "3.11.17"
 platform = "macos"
 arch = "arm64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.11.17%2B20261013-aarch64-apple-darwin-install_only.tar.gz"
-sha256 = "d81d757a9785850393cd695a9a686c765a6370fbdc83738589ef2ecd3e5c44b3"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.11.17%2B20261021-aarch64-apple-darwin-install_only.tar.gz"
+sha256 = "b5199d66966141fb6d5447512d2b2fe0398d417da37b1949f58db3792d314eac"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1504,8 +1504,8 @@ bin_paths = [
 ver = "3.11.17"
 platform = "macos"
 arch = "x64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.11.17%2B20261013-x86_64-apple-darwin-install_only.tar.gz"
-sha256 = "3acde87324867dab4e63329be3010130c75bfc4a3709db00866862d750a3bba3"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.11.17%2B20261021-x86_64-apple-darwin-install_only.tar.gz"
+sha256 = "c647c272312c03301e399f0e0fdb2b876fed213ee6985cd2d232d588a316483f"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1516,8 +1516,8 @@ bin_paths = [
 ver = "3.11.17"
 platform = "linux"
 arch = "arm64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.11.17%2B20261013-aarch64-unknown-linux-gnu-install_only.tar.gz"
-sha256 = "643954c07b04c18e215f812691cd5fa15d924fec1f3a5fdd9c1789484382ac24"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.11.17%2B20261021-aarch64-unknown-linux-gnu-install_only.tar.gz"
+sha256 = "c9af9f30e2cd74dbb9dfcc29cde4e966489692522c82a22d4a2bce79dce0e349"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1528,8 +1528,8 @@ bin_paths = [
 ver = "3.11.17"
 platform = "linux"
 arch = "x64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.11.17%2B20261013-x86_64-unknown-linux-gnu-install_only.tar.gz"
-sha256 = "846bf682e2b67393f2affa5e5c0994e446abc3a7cc5bb699890c36346823644c"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.11.17%2B20261021-x86_64-unknown-linux-gnu-install_only.tar.gz"
+sha256 = "7cc8d9dce9ea23c31267e7f244005c8979da04794b7737a3a30e62b03abeb120"
 format = "tar.gz"
 bin_paths = [
     "python/bin/python",
@@ -1540,8 +1540,8 @@ bin_paths = [
 ver = "3.11.17"
 platform = "windows"
 arch = "x64"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.11.17%2B20261013-x86_64-pc-windows-msvc-install_only.tar.gz"
-sha256 = "7616ab1f74aab975bd91eb0a657a74a092a63a46cac38c5f3f9415c79fd781f5"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.11.17%2B20261021-x86_64-pc-windows-msvc-install_only.tar.gz"
+sha256 = "136bbb2e50fe037fd5e32126e70e95b35d1fa5dac5bd04a55b8088415ee99540"
 format = "tar.gz"
 bin_paths = ["python/python.exe"]
 
